@@ -71,4 +71,4 @@ Error generating stack: `+i.message+`
         .animate-modalIn {
           animation: modalIn 0.3s ease-out;
         }
-      `})]})};function $f(){return a.jsx(Uf,{})}Gl.createRoot(document.getElementById("root")).render(a.jsx(Sc.StrictMode,{children:a.jsx($f,{})}));
+      `})]})};function $f(){return a.jsx(Uf,{})}Gl.createRoot(document.getElementById("jaysbot-container")).render(a.jsx(Sc.StrictMode,{children:a.jsx($f,{})}));
