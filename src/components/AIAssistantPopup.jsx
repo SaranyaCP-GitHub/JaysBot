@@ -32,7 +32,7 @@ const AIAssistantPopup = () => {
         // Trigger when any part of the element enters/leaves viewport
         threshold: 0,
         // Small margin to trigger slightly before fully out
-        rootMargin: '0px',
+        rootMargin: "0px",
       }
     );
 
@@ -120,7 +120,7 @@ const AIAssistantPopup = () => {
       {/* Bottom fixed input - slides in from bottom when scrolled or animation step 2+ */}
       {!hasSearched && (
         <div
-          className={`fixed bottom-0 left-0 right-0 z-50 p-4 bg-gradient-to-t from-slate-900 via-slate-900/95 to-transparent transition-all duration-500 ease-out ${
+          className={`fixed bottom-0 left-0 right-0 z-50 p-4  to-transparent transition-all duration-500 ease-out ${
             isScrolled || animationStep >= 2
               ? "translate-y-0 opacity-100"
               : "translate-y-full opacity-0 pointer-events-none"
@@ -128,7 +128,7 @@ const AIAssistantPopup = () => {
         >
           <div className="max-w-3xl mx-auto">
             <div className="p-1 rounded-full bg-gradient-to-r from-blue-500 via-cyan-500 to-purple-500">
-              <div className="bg-slate-900/80 backdrop-blur-xl rounded-full shadow-xl p-4">
+              <div className="bg-slate-600/60 backdrop-blur-lg rounded-full shadow-xl p-4">
                 <div className="flex items-center gap-3">
                   <Sparkles className="w-5 h-5 text-white flex-shrink-0" />
                   <input
@@ -160,12 +160,12 @@ const AIAssistantPopup = () => {
       <div className="relative z-10 flex flex-col items-center justify-center">
         {/* Sentinel element for Intersection Observer - always at hero input position */}
         {!hasSearched && (
-          <div 
+          <div
             ref={heroSentinelRef}
             className="w-full max-w-3xl h-1 pointer-events-none"
           />
         )}
-        
+
         {/* Hero section input - fades out and shrinks when scrolled or animation step 1+ */}
         {!hasSearched && (
           <div
@@ -173,11 +173,11 @@ const AIAssistantPopup = () => {
             className={`w-full max-w-3xl transition-all duration-500 ease-out overflow-hidden ${
               isScrolled || animationStep >= 1
                 ? "opacity-0 scale-95 pointer-events-none max-h-0 mb-0"
-                : "opacity-100 scale-100 max-h-32 mb-12"
+                : "opacity-100 scale-100 max-h-32"
             }`}
           >
             <div className="p-1 rounded-full bg-gradient-to-r from-blue-500 via-cyan-500 to-purple-500">
-              <div className="bg-slate-900/80 backdrop-blur-xl rounded-full shadow-xl p-4">
+              <div className="bg-slate-700/60 backdrop-blur-lg rounded-full shadow-xl p-4">
                 <div className="flex items-center gap-3">
                   <Sparkles className="w-5 h-5 text-white flex-shrink-0" />
                   <input
@@ -216,12 +216,12 @@ const AIAssistantPopup = () => {
             ></div>
           )}
           <div
-            className={`fixed left-0 right-0 z-50 transition-all duration-300 ease-out pointer-events-none ${
+            className={`fixed left-0 right-0 z-50 transition-all duration-300 ease-out pointer-events-none overflow-hidden ${
               minimized ? "cursor-pointer" : ""
             }`}
             style={{
-              bottom: minimized ? "105px" : "80px",
-              maxHeight: minimized ? "25px" : "50vh",
+              bottom: minimized ? "80px" : "80px",
+              maxHeight: minimized ? "50px" : "50vh",
               opacity: 1,
             }}
           >
@@ -346,10 +346,10 @@ const AIAssistantPopup = () => {
       )}
 
       {hasSearched && (
-        <div className="fixed bottom-0 left-0 right-0 z-50 p-4 bg-gradient-to-t from-slate-900 via-slate-900/95 to-transparent">
+        <div className="fixed bottom-0 left-0 right-0 z-50 p-4  to-transparent">
           <div className="max-w-3xl mx-auto">
             <div className="p-1 rounded-full bg-gradient-to-r from-blue-500 via-cyan-500 to-purple-500">
-              <div className="bg-slate-900/80 backdrop-blur-xl rounded-full shadow-xl p-4">
+              <div className="bg-slate-500/60 backdrop-blur-lg rounded-full shadow-xl p-4">
                 <div className="flex items-center gap-3">
                   <Sparkles className="w-5 h-5 text-white flex-shrink-0" />
                   <input
