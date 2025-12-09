@@ -128,7 +128,7 @@ const AIAssistantPopup = () => {
         >
           <div className="max-w-3xl mx-auto">
             <div className="p-1 rounded-full bg-gradient-to-r from-blue-500 via-cyan-500 to-purple-500">
-              <div className="bg-slate-600/60 backdrop-blur-lg rounded-full shadow-xl p-4">
+              <div className="bg-slate-500/60 backdrop-blur-lg rounded-full shadow-xl p-4">
                 <div className="flex items-center gap-3">
                   <Sparkles className="w-5 h-5 text-white flex-shrink-0" />
                   <input
@@ -137,7 +137,7 @@ const AIAssistantPopup = () => {
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                     onKeyPress={(e) => e.key === "Enter" && handleSearch()}
-                    placeholder="Ask us anything about C3 AI"
+                    placeholder="Ask us anything about Techjays"
                     className="flex-1 text-base text-white placeholder-white/60 focus:outline-none bg-transparent"
                   />
                   <button
@@ -177,7 +177,7 @@ const AIAssistantPopup = () => {
             }`}
           >
             <div className="p-1 rounded-full bg-gradient-to-r from-blue-500 via-cyan-500 to-purple-500">
-              <div className="bg-slate-700/60 backdrop-blur-lg rounded-full shadow-xl p-4">
+              <div className="bg-slate-500/60 backdrop-blur-lg rounded-full shadow-xl p-4">
                 <div className="flex items-center gap-3">
                   <Sparkles className="w-5 h-5 text-white flex-shrink-0" />
                   <input
@@ -185,7 +185,7 @@ const AIAssistantPopup = () => {
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                     onKeyPress={(e) => e.key === "Enter" && handleSearch()}
-                    placeholder="Ask us anything about C3 AI"
+                    placeholder="Ask us anything about Techjays"
                     className="flex-1 text-base text-white placeholder-white/60 focus:outline-none bg-transparent"
                   />
                   <button
@@ -227,7 +227,7 @@ const AIAssistantPopup = () => {
           >
             <div className="relative w-full max-w-3xl mx-auto px-4">
               <div
-                className={`relative w-full bg-slate-700/95 backdrop-blur-xl rounded-t-3xl shadow-2xl overflow-hidden border-t border-l border-r border-slate-700/50 flex flex-col pointer-events-auto animate-slideUp ${
+                className={`relative w-full bg-slate-600/95 backdrop-blur-xl rounded-t-3xl shadow-2xl overflow-hidden border-t border-l border-r border-slate-700/50 flex flex-col pointer-events-auto animate-slideUp ${
                   minimized ? "cursor-pointer" : "cursor-default"
                 }`}
                 onClick={(e) => {
@@ -357,7 +357,7 @@ const AIAssistantPopup = () => {
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                     onKeyPress={(e) => e.key === "Enter" && handleSearch()}
-                    placeholder="Ask us anything about C3 AI"
+                    placeholder="Ask us anything about Techjays"
                     className="flex-1 text-base text-white placeholder-white/60 focus:outline-none bg-transparent"
                   />
                   <button
