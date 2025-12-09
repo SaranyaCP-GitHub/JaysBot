@@ -14,31 +14,33 @@ const AIAssistantPopup = () => {
   const chatContainerRef = useRef(null);
   const bottomInputRef = useRef(null);
   const heroInputRef = useRef(null);
+  const heroSentinelRef = useRef(null);
 
   // Use Intersection Observer to detect when hero input leaves viewport
   useEffect(() => {
-    if (!heroInputRef.current || hasSearched) return;
+    if (!heroSentinelRef.current || hasSearched) return;
 
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
-          // When hero input is NOT intersecting (out of viewport), show bottom sticky
+          // When sentinel is NOT intersecting (out of viewport), show bottom sticky
+          // When it IS intersecting (in viewport), hide bottom sticky and show hero input
           setIsScrolled(!entry.isIntersecting);
         });
       },
       {
-        // Trigger when the element is completely out of viewport
+        // Trigger when any part of the element enters/leaves viewport
         threshold: 0,
-        // Add some root margin if you want it to trigger slightly before it's fully out
+        // Small margin to trigger slightly before fully out
         rootMargin: '0px',
       }
     );
 
-    observer.observe(heroInputRef.current);
+    observer.observe(heroSentinelRef.current);
 
     return () => {
-      if (heroInputRef.current) {
-        observer.unobserve(heroInputRef.current);
+      if (heroSentinelRef.current) {
+        observer.unobserve(heroSentinelRef.current);
       }
     };
   }, [hasSearched]);
@@ -156,6 +158,14 @@ const AIAssistantPopup = () => {
       )}
 
       <div className="relative z-10 flex flex-col items-center justify-center">
+        {/* Sentinel element for Intersection Observer - always at hero input position */}
+        {!hasSearched && (
+          <div 
+            ref={heroSentinelRef}
+            className="w-full max-w-3xl h-1 pointer-events-none"
+          />
+        )}
+        
         {/* Hero section input - fades out and shrinks when scrolled or animation step 1+ */}
         {!hasSearched && (
           <div
