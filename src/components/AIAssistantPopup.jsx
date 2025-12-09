@@ -395,6 +395,8 @@ const AIAssistantPopup = () => {
                     className="overflow-y-auto px-6 pt-1 pb-10 space-y-4 pointer-events-auto"
                     style={{
                       scrollBehavior: "smooth",
+                      scrollbarWidth: "thin",
+                      scrollbarColor: "gray transparent",
                       WebkitOverflowScrolling: "touch",
                       overscrollBehavior: "contain",
                       maxHeight: "45vh",
