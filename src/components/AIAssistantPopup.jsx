@@ -335,7 +335,7 @@ const AIAssistantPopup = () => {
               opacity: 1,
             }}
           >
-            <div className="relative w-full max-w-3xl mx-auto px-4 pb-4">
+            <div className="relative w-full max-w-3xl mx-auto px-4">
               <div
                 className={`relative w-full bg-slate-600/95 backdrop-blur-xl rounded-t-3xl shadow-2xl overflow-hidden border-t border-l border-r border-slate-700/50 flex flex-col pointer-events-auto animate-slideUp ${
                   minimized ? "cursor-pointer" : "cursor-default"
@@ -392,7 +392,7 @@ const AIAssistantPopup = () => {
                 >
                   <div
                     ref={chatContainerRef}
-                    className="overflow-y-auto px-6 pt-4 pb-8 space-y-4 pointer-events-auto"
+                    className="overflow-y-auto px-6 pt-1 pb-10 space-y-4 pointer-events-auto"
                     style={{
                       scrollBehavior: "smooth",
                       WebkitOverflowScrolling: "touch",
