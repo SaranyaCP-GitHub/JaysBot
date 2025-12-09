@@ -1,6 +1,72 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Send, Mic, X, Sparkles, ChevronDown } from "lucide-react";
 
+// Custom hook for responsive breakpoints
+const useResponsiveValues = () => {
+  const [screenSize, setScreenSize] = useState("laptop");
+
+  useEffect(() => {
+    const updateScreenSize = () => {
+      const width = window.innerWidth;
+      if (width < 640) {
+        setScreenSize("mobile");
+      } else if (width < 1024) {
+        setScreenSize("tablet");
+      } else if (width < 1280) {
+        setScreenSize("laptop");
+      } else if (width < 1440) {
+        setScreenSize("desktop");
+      } else if (width < 1920) {
+        setScreenSize("workStationDesktop");
+      } else {
+        setScreenSize("fourKDesktop");
+      }
+    };
+
+    updateScreenSize();
+    window.addEventListener("resize", updateScreenSize);
+    return () => window.removeEventListener("resize", updateScreenSize);
+  }, []);
+
+  const getModalStyles = (minimized) => {
+    const styles = {
+      mobile: {
+        bottom: minimized ? "7vh" : "7vh",
+        maxHeight: minimized ? "8vh" : "45vh",
+        chatMaxHeight: "40vh",
+      },
+      tablet: {
+        bottom: minimized ? "8.5vh" : "11vh",
+        maxHeight: minimized ? "9vh" : "50vh",
+        chatMaxHeight: "45vh",
+      },
+      laptop: {
+        bottom: minimized ? "5vh" : "8vh",
+        maxHeight: minimized ? "8.5vh" : "50vh",
+        chatMaxHeight: "45vh",
+      },
+      desktop: {
+        bottom: minimized ? "7vh" : "8vh",
+        maxHeight: minimized ? "9vh" : "50vh",
+        chatMaxHeight: "45vh",
+      },
+      workStationDesktop: {
+        bottom: minimized ? "4vh" : "5vh",
+        maxHeight: minimized ? "6vh" : "50vh",
+        chatMaxHeight: "40vh",
+      },
+      fourKDesktop: {
+        bottom: minimized ? "3vh" : "3vh",
+        maxHeight: minimized ? "2.5vh" : "50vh",
+        chatMaxHeight: "40vh",
+      },
+    };
+    return styles[screenSize];
+  };
+
+  return { screenSize, getModalStyles };
+};
+
 const AIAssistantPopup = () => {
   const [query, setQuery] = useState("");
   const [showLady, setShowLady] = useState(false);
@@ -16,6 +82,8 @@ const AIAssistantPopup = () => {
   const bottomInputRef = useRef(null);
   const heroInputRef = useRef(null);
   const heroSentinelRef = useRef(null);
+  const { screenSize, getModalStyles } = useResponsiveValues();
+  const modalStyles = getModalStyles(minimized);
 
   // Use Intersection Observer to detect when hero input leaves viewport
   useEffect(() => {
@@ -230,17 +298,17 @@ const AIAssistantPopup = () => {
       {/* Bottom fixed input - slides in from bottom when scrolled or animation step 2+ */}
       {!hasSearched && (
         <div
-          className={`fixed bottom-0 left-0 right-0 z-50 p-4  to-transparent transition-all duration-500 ease-out ${
+          className={`fixed bottom-0 left-0 right-0 z-50 p-2 sm:p-4 to-transparent transition-all duration-500 ease-out ${
             isScrolled || animationStep >= 2
               ? "translate-y-0 opacity-100"
               : "translate-y-full opacity-0 pointer-events-none"
           }`}
         >
-          <div className="max-w-3xl mx-auto">
+          <div className="max-w-[95vw] sm:max-w-xl md:max-w-2xl lg:max-w-3xl xl:max-w-4xl mx-auto">
             <div className="p-1 rounded-full bg-gradient-to-r from-blue-500 via-cyan-500 to-purple-500">
-              <div className="bg-slate-500/60 backdrop-blur-lg rounded-full shadow-xl p-4">
-                <div className="flex items-center gap-3">
-                  <Sparkles className="w-5 h-5 text-white flex-shrink-0" />
+              <div className="bg-slate-500/60 backdrop-blur-lg rounded-full shadow-xl p-3 sm:p-4">
+                <div className="flex items-center gap-2 sm:gap-3">
+                  <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-white flex-shrink-0" />
                   <input
                     ref={bottomInputRef}
                     type="text"
@@ -248,16 +316,16 @@ const AIAssistantPopup = () => {
                     onChange={(e) => setQuery(e.target.value)}
                     onKeyPress={(e) => e.key === "Enter" && handleSearch()}
                     placeholder="Ask us anything about Techjays"
-                    className="flex-1 text-base text-white placeholder-white/60 focus:outline-none bg-transparent"
+                    className="flex-1 text-sm sm:text-base text-white placeholder-white/60 focus:outline-none bg-transparent"
                   />
                   <button
                     onClick={handleSearch}
-                    className="p-2 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 rounded-full transition-all hover:scale-105"
+                    className="p-1.5 sm:p-2 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 rounded-full transition-all hover:scale-105"
                   >
                     {query.trim() ? (
-                      <Send className="w-4 h-4 text-white" />
+                      <Send className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
                     ) : (
-                      <Mic className="w-4 h-4 text-white" />
+                      <Mic className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
                     )}
                   </button>
                 </div>
@@ -280,32 +348,32 @@ const AIAssistantPopup = () => {
         {!hasSearched && (
           <div
             ref={heroInputRef}
-            className={`w-full max-w-3xl transition-all duration-500 ease-out overflow-hidden ${
+            className={`w-full max-w-[95vw] sm:max-w-xl md:max-w-2xl lg:max-w-3xl xl:max-w-4xl px-2 sm:px-0 transition-all duration-500 ease-out overflow-hidden ${
               isScrolled || animationStep >= 1
                 ? "opacity-0 scale-95 pointer-events-none max-h-0 mb-0"
                 : "opacity-100 scale-100 max-h-32"
             }`}
           >
             <div className="p-1 rounded-full bg-gradient-to-r from-blue-500 via-cyan-500 to-purple-500">
-              <div className="bg-slate-500/60 backdrop-blur-lg rounded-full shadow-xl p-4">
-                <div className="flex items-center gap-3">
-                  <Sparkles className="w-5 h-5 text-white flex-shrink-0" />
+              <div className="bg-slate-500/60 backdrop-blur-lg rounded-full shadow-xl p-3 sm:p-4">
+                <div className="flex items-center gap-2 sm:gap-3">
+                  <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-white flex-shrink-0" />
                   <input
                     type="text"
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                     onKeyPress={(e) => e.key === "Enter" && handleSearch()}
                     placeholder="Ask us anything about Techjays"
-                    className="flex-1 text-base text-white placeholder-white/60 focus:outline-none bg-transparent"
+                    className="flex-1 text-sm sm:text-base text-white placeholder-white/60 focus:outline-none bg-transparent"
                   />
                   <button
                     onClick={handleSearch}
-                    className="p-2 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 rounded-full transition-all hover:scale-105"
+                    className="p-1.5 sm:p-2 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 rounded-full transition-all hover:scale-105"
                   >
                     {query.trim() ? (
-                      <Send className="w-4 h-4 text-white" />
+                      <Send className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
                     ) : (
-                      <Mic className="w-4 h-4 text-white" />
+                      <Mic className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
                     )}
                   </button>
                 </div>
@@ -330,12 +398,12 @@ const AIAssistantPopup = () => {
               minimized ? "cursor-pointer" : ""
             }`}
             style={{
-              bottom: minimized ? "7vh" : "8vh",
-              maxHeight: minimized ? "9vh" : "50vh",
+              bottom: modalStyles.bottom,
+              maxHeight: modalStyles.maxHeight,
               opacity: 1,
             }}
           >
-            <div className="relative w-full max-w-3xl mx-auto px-4">
+            <div className="relative w-full max-w-[95vw] sm:max-w-xl md:max-w-2xl lg:max-w-3xl xl:max-w-4xl mx-auto px-2 sm:px-4">
               <div
                 className={`relative w-full bg-slate-600/95 backdrop-blur-xl rounded-t-3xl shadow-2xl overflow-hidden border-t border-l border-r border-slate-700/50 flex flex-col pointer-events-auto animate-slideUp ${
                   minimized ? "cursor-pointer" : "cursor-default"
@@ -366,18 +434,32 @@ const AIAssistantPopup = () => {
                   <ChevronDown className="w-4 h-4" />
                 </button> */}
 
-                {minimized && chatHistory.length > 0 && (
+                {minimized && (chatHistory.length > 0 || isTyping) && (
                   <div className="absolute top-2 left-8 right-8 flex items-center gap-3 text-white text-base overflow-hidden">
                     <div className="flex-shrink-0 w-6 h-6 rounded-full bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center">
                       <Sparkles className="w-3 h-3 text-white" />
                     </div>
-                    <div className="flex-1 truncate">
-                      {chatHistory[chatHistory.length - 1] &&
+                    <div className="flex-1">
+                      {isTyping ? (
+                        <div className="flex items-center gap-1.5 ">
+                          <div className="w-1.5 h-1.5 bg-white rounded-full animate-bounce"></div>
+                          <div
+                            className="w-1.5 h-1.5 bg-white rounded-full animate-bounce"
+                            style={{ animationDelay: "0.2s" }}
+                          ></div>
+                          <div
+                            className="w-1.5 h-1.5 bg-white rounded-full animate-bounce"
+                            style={{ animationDelay: "0.4s" }}
+                          ></div>
+                        </div>
+                      ) : (
+                        chatHistory[chatHistory.length - 1] &&
                         chatHistory[chatHistory.length - 1].type === "ai" && (
-                          <p className="truncate">
+                          <p className="text-ellipsis overflow-hidden whitespace-nowrap max-w-[85%]">
                             {chatHistory[chatHistory.length - 1].text}
                           </p>
-                        )}
+                        )
+                      )}
                     </div>
                     {/* <ChevronDown className="w-4 h-4 text-white/70 rotate-180 flex-shrink-0" /> */}
                   </div>
@@ -392,34 +474,36 @@ const AIAssistantPopup = () => {
                 >
                   <div
                     ref={chatContainerRef}
-                    className="overflow-y-auto px-6 pt-1 pb-10 space-y-4 pointer-events-auto"
+                    className="overflow-y-auto px-4 sm:px-6 pt-1 pb-10 space-y-4 pointer-events-auto"
                     style={{
                       scrollBehavior: "smooth",
                       scrollbarWidth: "thin",
                       scrollbarColor: "gray transparent",
                       WebkitOverflowScrolling: "touch",
+                      scrollbarWidth: "thin",
+                      scrollbarColor: "gray transparent",
                       overscrollBehavior: "contain",
-                      maxHeight: "45vh",
+                      maxHeight: modalStyles.chatMaxHeight,
                     }}
                   >
                     {chatHistory.map((message, index) => (
                       <div key={index} className="animate-fadeIn">
                         {message.type === "user" ? (
-                          <div className="flex items-start gap-3 justify-end">
-                            <div className="bg-blue-500/90 backdrop-blur-sm text-white rounded-2xl rounded-tr-none p-4 shadow-sm max-w-[75%]">
-                              <p className="text-base leading-relaxed">
+                          <div className="flex items-start gap-2 sm:gap-3 justify-end">
+                            <div className="bg-blue-500/90 backdrop-blur-sm text-white rounded-2xl rounded-tr-none p-3 sm:p-4 shadow-sm max-w-[85%] sm:max-w-[75%]">
+                              <p className="text-sm sm:text-base leading-relaxed">
                                 {message.text}
                               </p>
                             </div>
                           </div>
                         ) : (
-                          <div className="flex items-start gap-3">
-                            <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center shadow-sm">
-                              <Sparkles className="w-4 h-4 text-white" />
+                          <div className="flex items-start gap-2 sm:gap-3">
+                            <div className="flex-shrink-0 w-6 h-6 sm:w-8 sm:h-8 rounded-full bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center shadow-sm">
+                              <Sparkles className="w-3 h-3 sm:w-4 sm:h-4 text-white" />
                             </div>
                             <div className="flex-1">
-                              <div className="bg-white/20 backdrop-blur-sm rounded-2xl rounded-tl-none p-5 shadow-sm">
-                                <p className="text-white text-base leading-relaxed">
+                              <div className="bg-white/20 backdrop-blur-sm rounded-2xl rounded-tl-none p-3 sm:p-5 shadow-sm">
+                                <p className="text-white text-sm sm:text-base leading-relaxed">
                                   {message.text}
                                 </p>
                               </div>
@@ -458,28 +542,28 @@ const AIAssistantPopup = () => {
       )}
 
       {hasSearched && (
-        <div className="fixed bottom-0 left-0 right-0 z-50 p-4  to-transparent">
-          <div className="max-w-3xl mx-auto">
+        <div className="fixed bottom-0 left-0 right-0 z-50 px-2 pb-2 sm:px-4 sm:pb-4 to-transparent">
+          <div className="max-w-[95vw] sm:max-w-xl md:max-w-2xl lg:max-w-3xl xl:max-w-4xl mx-auto">
             <div className="p-1 rounded-full bg-gradient-to-r from-blue-500 via-cyan-500 to-purple-500">
-              <div className="bg-slate-500/60 backdrop-blur-lg rounded-full shadow-xl p-4">
-                <div className="flex items-center gap-3">
-                  <Sparkles className="w-5 h-5 text-white flex-shrink-0" />
+              <div className="bg-slate-500/60 backdrop-blur-lg rounded-full shadow-xl p-3 sm:p-4">
+                <div className="flex items-center gap-2 sm:gap-3">
+                  <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-white flex-shrink-0" />
                   <input
                     type="text"
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                     onKeyPress={(e) => e.key === "Enter" && handleSearch()}
                     placeholder="Ask us anything about Techjays"
-                    className="flex-1 text-base text-white placeholder-white/60 focus:outline-none bg-transparent"
+                    className="flex-1 text-sm sm:text-base text-white placeholder-white/60 focus:outline-none bg-transparent"
                   />
                   <button
                     onClick={handleSearch}
-                    className="p-2 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 rounded-full transition-all hover:scale-105"
+                    className="p-1.5 sm:p-2 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 rounded-full transition-all hover:scale-105"
                   >
                     {query.trim() ? (
-                      <Send className="w-4 h-4 text-white" />
+                      <Send className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
                     ) : (
-                      <Mic className="w-4 h-4 text-white" />
+                      <Mic className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
                     )}
                   </button>
                 </div>
