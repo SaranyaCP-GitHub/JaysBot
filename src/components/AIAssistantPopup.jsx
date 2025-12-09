@@ -480,8 +480,6 @@ const AIAssistantPopup = () => {
                       scrollbarWidth: "thin",
                       scrollbarColor: "gray transparent",
                       WebkitOverflowScrolling: "touch",
-                      scrollbarWidth: "thin",
-                      scrollbarColor: "gray transparent",
                       overscrollBehavior: "contain",
                       maxHeight: modalStyles.chatMaxHeight,
                     }}
