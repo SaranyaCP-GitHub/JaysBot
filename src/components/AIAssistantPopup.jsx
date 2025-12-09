@@ -11,6 +11,7 @@ const AIAssistantPopup = () => {
   const [hasSearched, setHasSearched] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
   const [animationStep, setAnimationStep] = useState(0); // 0: initial, 1: hero fading, 2: bottom showing, 3: modal showing
+  const [sessionKey, setSessionKey] = useState(null);
   const chatContainerRef = useRef(null);
   const bottomInputRef = useRef(null);
   const heroInputRef = useRef(null);
@@ -65,38 +66,140 @@ const AIAssistantPopup = () => {
     };
   }, [showLady, minimized]);
 
-  const handleSearch = () => {
+  // Get or initialize session key
+  const getSessionKey = async () => {
+    // Check sessionStorage first
+    let storedSessionKey = sessionStorage.getItem('session_key');
+    if (storedSessionKey) {
+      setSessionKey(storedSessionKey);
+      return storedSessionKey;
+    }
+
+    // If no session key, fetch one
+    try {
+      const response = await fetch('https://chat-api.techjays.com/api/v1/chat/', {
+        method: 'GET'
+      });
+      if (!response.ok) {
+        throw new Error('Failed to retrieve session key');
+      }
+      const data = await response.json();
+      if (data.session_key) {
+        sessionStorage.setItem('session_key', data.session_key);
+        setSessionKey(data.session_key);
+        return data.session_key;
+      }
+      return null;
+    } catch (error) {
+      console.error('Error fetching session key:', error);
+      return null;
+    }
+  };
+
+  // Initialize session key on component mount
+  useEffect(() => {
+    getSessionKey();
+  }, []);
+
+  const handleSearch = async () => {
     if (!query.trim()) return;
 
     const userMessage = query;
 
-    // Step 1: Fade out hero section textbox
-    setAnimationStep(1);
-
-    setTimeout(() => {
-      // Step 2: Slide up bottom textbox
-      setAnimationStep(2);
-
-      setTimeout(() => {
-        // Step 3: Show modal
-        setAnimationStep(3);
-        setShowLady(true);
-        setHasSearched(true);
-      }, 400); // Wait for bottom textbox slide up
+    // Get or initialize session key
+    const currentSessionKey = await getSessionKey();
+    if (!currentSessionKey) {
+      const errorMessage = "Sorry, I'm having trouble connecting. Please try again.";
       setChatHistory((prev) => [...prev, { type: "user", text: userMessage }]);
-      setIsScrolled(false);
-      setMinimized(false);
-      setIsTyping(true);
-      setResponse("");
-      setQuery("");
+      setChatHistory((prev) => [...prev, { type: "ai", text: errorMessage }]);
+      return;
+    }
+
+    // Step 1: Fade out hero section textbox (only on first search)
+    if (!hasSearched) {
+      setAnimationStep(1);
+    }
+
+    // Add user message to chat history
+    setChatHistory((prev) => [...prev, { type: "user", text: userMessage }]);
+    setIsTyping(true);
+    setResponse("");
+    setQuery("");
+
+    // Show modal on first search
+    if (!hasSearched) {
       setTimeout(() => {
-        const aiResponse =
-          "Hi there! I am your AI assistant. I can help you with information about C3 AI, our products, services, and answer any questions you have. What would you like to know?";
-        setResponse(aiResponse);
-        setChatHistory((prev) => [...prev, { type: "ai", text: aiResponse }]);
-        setIsTyping(false);
-      }, 2000);
-    }, 0); // Wait for hero fadeout
+        setAnimationStep(2);
+        setTimeout(() => {
+          setAnimationStep(3);
+          setShowLady(true);
+          setHasSearched(true);
+        }, 400);
+      }, 0);
+    }
+
+    setIsScrolled(false);
+    setMinimized(false);
+
+    try {
+      // Call the chat API
+      const response = await fetch('https://chat-api.techjays.com/api/v1/chat/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          session_key: currentSessionKey,
+          question: userMessage
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch bot response');
+      }
+
+      const data = await response.json();
+
+      if (data.result && data.response && data.response.text) {
+        // Update session key if provided
+        if (data.session_key) {
+          sessionStorage.setItem('session_key', data.session_key);
+          setSessionKey(data.session_key);
+        }
+
+        let botMessage = data.response.text;
+
+        // Handle links if they exist (similar to chat.js logic)
+        if (data.response.links && data.response.links.length > 0) {
+          const linkTexts = botMessage.split(', ');
+          let formattedLinks = '';
+          data.response.links.forEach((link, index) => {
+            const cleanedLink = link.replace(/<|>|\[|\]/g, '');
+            const linkText = linkTexts[index] ? linkTexts[index].trim() : '';
+            formattedLinks += `${linkText}: ${cleanedLink}`;
+            if (index !== data.response.links.length - 1) {
+              formattedLinks += ' ';
+            }
+          });
+          botMessage = formattedLinks;
+        }
+
+        // Clean up message formatting
+        botMessage = botMessage.replace(/<link>/g, '').replace(/, $/, '');
+        botMessage = botMessage.replace(/\s*\.:\s*/g, '');
+
+        setResponse(botMessage);
+        setChatHistory((prev) => [...prev, { type: "ai", text: botMessage }]);
+      } else {
+        throw new Error('Invalid bot response format');
+      }
+    } catch (error) {
+      console.error('Error sending user message:', error);
+      const errorMessage = "Sorry, I encountered an error. Please try again.";
+      setChatHistory((prev) => [...prev, { type: "ai", text: errorMessage }]);
+    } finally {
+      setIsTyping(false);
+    }
   };
 
   const handleClose = () => {
