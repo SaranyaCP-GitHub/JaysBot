@@ -69,7 +69,7 @@ const AIAssistantPopup = () => {
   // Get or initialize session key
   const getSessionKey = async () => {
     // Check sessionStorage first
-    let storedSessionKey = sessionStorage.getItem('session_key');
+    let storedSessionKey = sessionStorage.getItem("session_key");
     if (storedSessionKey) {
       setSessionKey(storedSessionKey);
       return storedSessionKey;
@@ -77,21 +77,24 @@ const AIAssistantPopup = () => {
 
     // If no session key, fetch one
     try {
-      const response = await fetch('https://chat-api.techjays.com/api/v1/chat/', {
-        method: 'GET'
-      });
+      const response = await fetch(
+        "https://chat-api.techjays.com/api/v1/chat/",
+        {
+          method: "GET",
+        }
+      );
       if (!response.ok) {
-        throw new Error('Failed to retrieve session key');
+        throw new Error("Failed to retrieve session key");
       }
       const data = await response.json();
       if (data.session_key) {
-        sessionStorage.setItem('session_key', data.session_key);
+        sessionStorage.setItem("session_key", data.session_key);
         setSessionKey(data.session_key);
         return data.session_key;
       }
       return null;
     } catch (error) {
-      console.error('Error fetching session key:', error);
+      console.error("Error fetching session key:", error);
       return null;
     }
   };
@@ -109,7 +112,8 @@ const AIAssistantPopup = () => {
     // Get or initialize session key
     const currentSessionKey = await getSessionKey();
     if (!currentSessionKey) {
-      const errorMessage = "Sorry, I'm having trouble connecting. Please try again.";
+      const errorMessage =
+        "Sorry, I'm having trouble connecting. Please try again.";
       setChatHistory((prev) => [...prev, { type: "user", text: userMessage }]);
       setChatHistory((prev) => [...prev, { type: "ai", text: errorMessage }]);
       return;
@@ -143,19 +147,22 @@ const AIAssistantPopup = () => {
 
     try {
       // Call the chat API
-      const response = await fetch('https://chat-api.techjays.com/api/v1/chat/', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          session_key: currentSessionKey,
-          question: userMessage
-        })
-      });
+      const response = await fetch(
+        "https://chat-api.techjays.com/api/v1/chat/",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            session_key: currentSessionKey,
+            question: userMessage,
+          }),
+        }
+      );
 
       if (!response.ok) {
-        throw new Error('Failed to fetch bot response');
+        throw new Error("Failed to fetch bot response");
       }
 
       const data = await response.json();
@@ -163,7 +170,7 @@ const AIAssistantPopup = () => {
       if (data.result && data.response && data.response.text) {
         // Update session key if provided
         if (data.session_key) {
-          sessionStorage.setItem('session_key', data.session_key);
+          sessionStorage.setItem("session_key", data.session_key);
           setSessionKey(data.session_key);
         }
 
@@ -171,30 +178,30 @@ const AIAssistantPopup = () => {
 
         // Handle links if they exist (similar to chat.js logic)
         if (data.response.links && data.response.links.length > 0) {
-          const linkTexts = botMessage.split(', ');
-          let formattedLinks = '';
+          const linkTexts = botMessage.split(", ");
+          let formattedLinks = "";
           data.response.links.forEach((link, index) => {
-            const cleanedLink = link.replace(/<|>|\[|\]/g, '');
-            const linkText = linkTexts[index] ? linkTexts[index].trim() : '';
+            const cleanedLink = link.replace(/<|>|\[|\]/g, "");
+            const linkText = linkTexts[index] ? linkTexts[index].trim() : "";
             formattedLinks += `${linkText}: ${cleanedLink}`;
             if (index !== data.response.links.length - 1) {
-              formattedLinks += ' ';
+              formattedLinks += " ";
             }
           });
           botMessage = formattedLinks;
         }
 
         // Clean up message formatting
-        botMessage = botMessage.replace(/<link>/g, '').replace(/, $/, '');
-        botMessage = botMessage.replace(/\s*\.:\s*/g, '');
+        botMessage = botMessage.replace(/<link>/g, "").replace(/, $/, "");
+        botMessage = botMessage.replace(/\s*\.:\s*/g, "");
 
         setResponse(botMessage);
         setChatHistory((prev) => [...prev, { type: "ai", text: botMessage }]);
       } else {
-        throw new Error('Invalid bot response format');
+        throw new Error("Invalid bot response format");
       }
     } catch (error) {
-      console.error('Error sending user message:', error);
+      console.error("Error sending user message:", error);
       const errorMessage = "Sorry, I encountered an error. Please try again.";
       setChatHistory((prev) => [...prev, { type: "ai", text: errorMessage }]);
     } finally {
@@ -323,12 +330,12 @@ const AIAssistantPopup = () => {
               minimized ? "cursor-pointer" : ""
             }`}
             style={{
-              bottom: minimized ? "80px" : "80px",
-              maxHeight: minimized ? "50px" : "50vh",
+              bottom: minimized ? "7vh" : "8vh",
+              maxHeight: minimized ? "9vh" : "50vh",
               opacity: 1,
             }}
           >
-            <div className="relative w-full max-w-3xl mx-auto px-4">
+            <div className="relative w-full max-w-3xl mx-auto px-4 pb-4">
               <div
                 className={`relative w-full bg-slate-600/95 backdrop-blur-xl rounded-t-3xl shadow-2xl overflow-hidden border-t border-l border-r border-slate-700/50 flex flex-col pointer-events-auto animate-slideUp ${
                   minimized ? "cursor-pointer" : "cursor-default"
@@ -342,7 +349,7 @@ const AIAssistantPopup = () => {
               >
                 <button
                   onClick={() => setMinimized(true)}
-                  className={`flex self-end z-10 p-1.5 mr-3 mt-2  mb-2 text-white/70 hover:text-white hover:bg-white/10 rounded-lg transition-all ${
+                  className={`flex self-end z-10 p-1.5 mr-3 mt-2 mb-2 text-white/70 hover:text-white hover:bg-white/10 rounded-lg transition-all ${
                     minimized ? "opacity-0 pointer-events-none" : "opacity-100"
                   }`}
                 >
