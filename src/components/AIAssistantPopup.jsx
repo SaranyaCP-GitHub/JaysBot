@@ -13,19 +13,34 @@ const AIAssistantPopup = () => {
   const [animationStep, setAnimationStep] = useState(0); // 0: initial, 1: hero fading, 2: bottom showing, 3: modal showing
   const chatContainerRef = useRef(null);
   const bottomInputRef = useRef(null);
+  const heroInputRef = useRef(null);
 
+  // Use Intersection Observer to detect when hero input leaves viewport
   useEffect(() => {
-    const handleScroll = () => {
-      if (!hasSearched) {
-        // Check page scroll, not container scroll
-        const scrollPosition = window.scrollY || document.documentElement.scrollTop || document.body.scrollTop;
-        setIsScrolled(scrollPosition > 200);
+    if (!heroInputRef.current || hasSearched) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          // When hero input is NOT intersecting (out of viewport), show bottom sticky
+          setIsScrolled(!entry.isIntersecting);
+        });
+      },
+      {
+        // Trigger when the element is completely out of viewport
+        threshold: 0,
+        // Add some root margin if you want it to trigger slightly before it's fully out
+        rootMargin: '0px',
+      }
+    );
+
+    observer.observe(heroInputRef.current);
+
+    return () => {
+      if (heroInputRef.current) {
+        observer.unobserve(heroInputRef.current);
       }
     };
-
-    handleScroll();
-    window.addEventListener("scroll", handleScroll, { passive: true });
-    return () => window.removeEventListener("scroll", handleScroll);
   }, [hasSearched]);
 
   // Auto-scroll to bottom when new messages arrive
@@ -94,7 +109,7 @@ const AIAssistantPopup = () => {
   };
 
   return (
-    <div className="min-h-screen bg-transparent relative overflow-auto">
+    <div className="bg-transparent relative overflow-auto">
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-20 left-20 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl"></div>
         <div className="absolute bottom-20 right-20 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl"></div>
@@ -140,10 +155,11 @@ const AIAssistantPopup = () => {
         </div>
       )}
 
-      <div className="relative z-10 flex flex-col items-center justify-center min-h-screen p-8 pb-32">
+      <div className="relative z-10 flex flex-col items-center justify-center p-8 pb-32">
         {/* Hero section input - fades out and shrinks when scrolled or animation step 1+ */}
         {!hasSearched && (
           <div
+            ref={heroInputRef}
             className={`w-full max-w-3xl transition-all duration-500 ease-out overflow-hidden ${
               isScrolled || animationStep >= 1
                 ? "opacity-0 scale-95 pointer-events-none max-h-0 mb-0"
