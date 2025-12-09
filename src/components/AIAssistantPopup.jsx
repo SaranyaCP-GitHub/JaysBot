@@ -155,7 +155,7 @@ const AIAssistantPopup = () => {
         </div>
       )}
 
-      <div className="relative z-10 flex flex-col items-center justify-center p-8 pb-32">
+      <div className="relative z-10 flex flex-col items-center justify-center">
         {/* Hero section input - fades out and shrinks when scrolled or animation step 1+ */}
         {!hasSearched && (
           <div
