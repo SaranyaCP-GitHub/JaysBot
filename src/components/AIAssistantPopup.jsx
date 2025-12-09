@@ -17,12 +17,14 @@ const AIAssistantPopup = () => {
   useEffect(() => {
     const handleScroll = () => {
       if (!hasSearched) {
-        setIsScrolled(window.scrollY > 200);
+        // Check page scroll, not container scroll
+        const scrollPosition = window.scrollY || document.documentElement.scrollTop || document.body.scrollTop;
+        setIsScrolled(scrollPosition > 200);
       }
     };
 
     handleScroll();
-    window.addEventListener("scroll", handleScroll);
+    window.addEventListener("scroll", handleScroll, { passive: true });
     return () => window.removeEventListener("scroll", handleScroll);
   }, [hasSearched]);
 
