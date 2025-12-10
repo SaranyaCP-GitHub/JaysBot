@@ -45,9 +45,9 @@ const useResponsiveValues = () => {
         chatMaxHeight: "40vh",
       },
       tablet: {
-        bottom: minimized ? "8.5vh" : "11vh",
-        maxHeight: minimized ? "9vh" : "50vh",
-        chatMaxHeight: "45vh",
+        bottom: minimized ? "7vh" : "8vh",
+        maxHeight: minimized ? "7vh" : "70vh",
+        chatMaxHeight: "60vh",
       },
       laptop: {
         bottom: minimized ? "5vh" : "8vh",
@@ -332,7 +332,7 @@ const AIAssistantPopup = () => {
       {/* Bottom fixed input - slides in from bottom when scrolled or animation step 2+ */}
       {!hasSearched && (
         <div
-          className={`fixed bottom-0 left-0 right-0 z-50 p-2 sm:p-4 to-transparent transition-all duration-500 ease-out ${
+          className={`fixed bottom-0 left-0 right-0 z-50 p-2  to-transparent transition-all duration-500 ease-out ${
             isScrolled || animationStep >= 2
               ? "translate-y-0 opacity-100"
               : "translate-y-full opacity-0 pointer-events-none"
@@ -340,7 +340,7 @@ const AIAssistantPopup = () => {
         >
           <div className="w-full max-w-[576px] mx-auto">
             <div className="input-glow-container rounded-full">
-              <div className="bg-white/70 backdrop-blur-md rounded-full h-12 flex items-center p-3 sm:p-4">
+              <div className="rounded-full h-12 flex items-center p-3 ">
                 <div className="flex items-center gap-2 sm:gap-3 w-full">
                   <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-gray-700 flex-shrink-0" />
                   <input
@@ -396,7 +396,7 @@ const AIAssistantPopup = () => {
             }`}
           >
             <div className="input-glow-container rounded-full">
-              <div className="bg-white/70 backdrop-blur-md rounded-full h-12 flex items-center p-3 sm:p-4">
+              <div className="rounded-full h-12 flex items-center p-3 ">
                 <div className="flex items-center gap-2 sm:gap-3 w-full">
                   <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-gray-700 flex-shrink-0" />
                   <input
@@ -483,19 +483,19 @@ const AIAssistantPopup = () => {
 
                 {minimized && (chatHistory.length > 0 || isTyping) && (
                   <div className="absolute top-2 left-8 right-8 flex items-center gap-3 text-gray-800 text-base overflow-hidden">
-                    <div className="flex-shrink-0 w-6 h-6 rounded-full bg-gray-700 flex items-center justify-center">
+                    <div className="flex-shrink-0 w-6 h-6 rounded-full bg-gradient-to-br from-[#a78bfa] to-[#818cf8] flex items-center justify-center">
                       <Sparkles className="w-3 h-3 text-white" />
                     </div>
                     <div className="flex-1">
                       {isTyping ? (
                         <div className="flex items-center gap-1.5 ">
-                          <div className="w-1.5 h-1.5 bg-gray-600 rounded-full animate-bounce"></div>
+                          <div className="w-1.5 h-1.5 bg-[#818cf8] rounded-full animate-bounce"></div>
                           <div
-                            className="w-1.5 h-1.5 bg-gray-600 rounded-full animate-bounce"
+                            className="w-1.5 h-1.5 bg-[#818cf8] rounded-full animate-bounce"
                             style={{ animationDelay: "0.2s" }}
                           ></div>
                           <div
-                            className="w-1.5 h-1.5 bg-gray-600 rounded-full animate-bounce"
+                            className="w-1.5 h-1.5 bg-[#818cf8] rounded-full animate-bounce"
                             style={{ animationDelay: "0.4s" }}
                           ></div>
                         </div>
@@ -535,7 +535,7 @@ const AIAssistantPopup = () => {
                       <div key={index} className="animate-fadeIn">
                         {message.type === "user" ? (
                           <div className="flex items-start gap-2 sm:gap-3 justify-end">
-                            <div className="bg-gray-800 text-white rounded-2xl rounded-tr-none p-3 sm:p-4 shadow-sm max-w-[85%] sm:max-w-[75%]">
+                            <div className="bg-gradient-to-r from-[#818cf8] to-[#6366f1] text-white rounded-2xl rounded-tr-none p-3 shadow-sm max-w-[85%] sm:max-w-[75%]">
                               <p className="text-sm sm:text-base leading-relaxed">
                                 {message.text}
                               </p>
@@ -543,12 +543,12 @@ const AIAssistantPopup = () => {
                           </div>
                         ) : (
                           <div className="flex items-start gap-2 sm:gap-3">
-                            <div className="flex-shrink-0 w-6 h-6 sm:w-8 sm:h-8 rounded-full bg-gray-700 flex items-center justify-center shadow-sm">
+                            <div className="flex-shrink-0 w-6 h-6 sm:w-8 sm:h-8 rounded-full bg-gradient-to-br from-[#a78bfa] to-[#818cf8] flex items-center justify-center shadow-sm">
                               <Sparkles className="w-3 h-3 sm:w-4 sm:h-4 text-white" />
                             </div>
                             <div className="flex-1">
-                              <div className="bg-gray-100 rounded-2xl rounded-tl-none p-3 sm:p-5 shadow-sm">
-                                <p className="text-gray-800 text-sm sm:text-base leading-relaxed">
+                              <div className="bg-gradient-to-br from-[#f3f0ff] to-[#faf8ff] rounded-2xl rounded-tl-none p-3 shadow-sm border border-[#e9d5ff]/30">
+                                <p className="text-gray-700 text-sm sm:text-base leading-relaxed">
                                   {message.text}
                                 </p>
                               </div>
@@ -560,18 +560,18 @@ const AIAssistantPopup = () => {
 
                     {isTyping && (
                       <div className="flex items-start gap-3 animate-fadeIn">
-                        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center shadow-sm">
+                        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-[#a78bfa] to-[#818cf8] flex items-center justify-center shadow-sm">
                           <Sparkles className="w-4 h-4 text-white" />
                         </div>
-                        <div className="flex bg-gray-100 rounded-2xl rounded-tl-none p-4 shadow-sm">
+                        <div className="flex bg-gradient-to-br from-[#f3f0ff] to-[#faf8ff] rounded-2xl rounded-tl-none p-4 shadow-sm border border-[#e9d5ff]/30">
                           <div className="flex gap-2">
-                            <div className="w-2 h-2 bg-gray-600 rounded-full animate-bounce"></div>
+                            <div className="w-2 h-2 bg-[#818cf8] rounded-full animate-bounce"></div>
                             <div
-                              className="w-2 h-2 bg-gray-600 rounded-full animate-bounce"
+                              className="w-2 h-2 bg-[#818cf8] rounded-full animate-bounce"
                               style={{ animationDelay: "0.2s" }}
                             ></div>
                             <div
-                              className="w-2 h-2 bg-gray-600 rounded-full animate-bounce"
+                              className="w-2 h-2 bg-[#818cf8] rounded-full animate-bounce"
                               style={{ animationDelay: "0.4s" }}
                             ></div>
                           </div>
@@ -590,7 +590,7 @@ const AIAssistantPopup = () => {
         <div className="fixed bottom-0 left-0 right-0 z-50 px-2 pb-2 sm:px-4 sm:pb-4 to-transparent">
             <div className="w-full max-w-[576px] mx-auto">
             <div className="input-glow-container rounded-full">
-              <div className="bg-white/70 backdrop-blur-md rounded-full h-12 flex items-center p-3 sm:p-4">
+              <div className="rounded-full h-12 flex items-center p-3 ">
                 <div className="flex items-center gap-2 sm:gap-3 w-full">
                   <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-gray-700 flex-shrink-0" />
                   <input
@@ -659,7 +659,7 @@ const AIAssistantPopup = () => {
           animation: modalIn 0.3s ease-out;
         }
         
-        @keyframes radiantGlow {
+        @keyframes borderGlow {
           0% {
             background-position: 0% 50%;
           }
@@ -671,63 +671,38 @@ const AIAssistantPopup = () => {
         .input-glow-container {
           position: relative;
           padding: 2px;
-          border-radius: 9999px;
-          background: transparent;
+          border-radius: 50px;
+          background: linear-gradient(
+            90deg,
+            #c084fc,
+            #a78bfa,
+            #818cf8,
+            #60a5fa,
+            #22d3ee,
+            #60a5fa,
+            #818cf8,
+            #c084fc,
+            #a78bfa,
+            #818cf8
+          );
+          background-size: 300% 100%;
+          animation: borderGlow 3s linear infinite;
+          transition: all 0.3s ease;
         }
         
         .input-glow-container > div {
           position: relative;
-          border-radius: 9999px;
+          border-radius: 48px;
           border: none;
           outline: none;
           box-shadow: none;
           z-index: 1;
+          background: linear-gradient(135deg, #f3f0ff 0%, #faf8ff 100%);
+          transition: all 0.3s ease;
         }
-        
-        .input-glow-container::before {
-          content: '';
-          position: absolute;
-          inset: 0;
-          border-radius: 9999px;
-          padding: 2px;
-          background: linear-gradient(
-            90deg,
-            rgba(99, 102, 241, 0.4),
-            rgba(139, 92, 246, 0.5),
-            rgba(99, 102, 241, 0.4),
-            rgba(139, 92, 246, 0.5),
-            rgba(99, 102, 241, 0.4)
-          );
-          background-size: 200% 100%;
-          animation: radiantGlow 3s linear infinite;
-          -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-          -webkit-mask-composite: xor;
-          mask-composite: exclude;
-          z-index: 0;
-        }
-        
-        .input-glow-container::after {
-          content: '';
-          position: absolute;
-          inset: -3px;
-          border-radius: 9999px;
-          background: linear-gradient(
-            90deg,
-            rgba(99, 102, 241, 0.2),
-            rgba(139, 92, 246, 0.3),
-            rgba(99, 102, 241, 0.2),
-            rgba(139, 92, 246, 0.3),
-            rgba(99, 102, 241, 0.2)
-          );
-          background-size: 200% 100%;
-          animation: radiantGlow 3s linear infinite;
-          filter: blur(8px);
-          z-index: -1;
-        }
-        
-        .input-glow-container:focus-within::before,
-        .input-glow-container:focus-within::after {
-          animation-duration: 2s;
+
+        .input-glow-container:focus-within > div {
+          background: linear-gradient(135deg, #ede9fe 0%, #f5f3ff 100%);
         }
       `}</style>
     </div>
