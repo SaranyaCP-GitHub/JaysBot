@@ -16,10 +16,16 @@ const useResponsiveValues = () => {
         setScreenSize("laptop");
       } else if (width < 1440) {
         setScreenSize("desktop");
-      } else if (width < 1920) {
-        setScreenSize("workStationDesktop");
+      } else if (width < 1635) {
+        setScreenSize("largeDesktop");
+      } else if (width < 1700) {
+        setScreenSize("xlargeDesktop");
+      } else if (width < 1800) {
+        setScreenSize("xxLargeDesktop");
+      } else if (width < 2960) {
+        setScreenSize("designerDesktop");
       } else {
-        setScreenSize("fourKDesktop");
+        setScreenSize("fourteenKDesktop");
       }
     };
 
@@ -50,13 +56,28 @@ const useResponsiveValues = () => {
         maxHeight: minimized ? "9vh" : "50vh",
         chatMaxHeight: "45vh",
       },
-      workStationDesktop: {
-        bottom: minimized ? "4vh" : "5vh",
-        maxHeight: minimized ? "6vh" : "50vh",
+      largeDesktop: {
+        bottom: minimized ? "5.5vh" : "7vh",
+        maxHeight: minimized ? "4.5vh" : "50vh",
+        chatMaxHeight: "45vh",
+      },
+      xlargeDesktop: {
+        bottom: minimized ? "4vh" : "4vh",
+        maxHeight: minimized ? "2.5vh" : "50vh",
+        chatMaxHeight: "45vh",
+      },
+      xxLargeDesktop: {
+        bottom: minimized ? "4vh" : "4vh",
+        maxHeight: minimized ? "2vh" : "50vh",
+        chatMaxHeight: "45vh",
+      },
+      designerDesktop: {
+        bottom: minimized ? "2.5vh" : "3.5vh",
+        maxHeight: minimized ? "4vh" : "50vh",
         chatMaxHeight: "40vh",
       },
-      fourKDesktop: {
-        bottom: minimized ? "3vh" : "3vh",
+      fourteenKDesktop: {
+        bottom: minimized ? "0.5vh" : "3.5vh",
         maxHeight: minimized ? "2.5vh" : "50vh",
         chatMaxHeight: "40vh",
       },
