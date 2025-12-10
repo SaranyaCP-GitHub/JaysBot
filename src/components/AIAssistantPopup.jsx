@@ -42,58 +42,58 @@ const useResponsiveValues = () => {
   const getModalStyles = (minimized) => {
     const styles = {
       mobile: {
-        bottom: minimized ? "7vh" : "7vh",
-        maxHeight: minimized ? "8vh" : "45vh",
+        bottom: minimized ? "39px" : "39px",
+        maxHeight: minimized ? "60px" : "45vh",
         chatMaxHeight: "40vh",
       },
       smallTablet: {
-        bottom: minimized ? "8vh" : "5vh",
-        maxHeight: minimized ? "8vh" : "70vh",
+        bottom: minimized ? "47px" : "47px",
+        maxHeight: minimized ? "60px" : "70vh",
         chatMaxHeight: "65vh",
       },
       tablet: {
-        bottom: minimized ? "7vh" : "8vh",
-        maxHeight: minimized ? "7vh" : "70vh",
+        bottom: minimized ? "47px" : "47px",
+        maxHeight: minimized ? "60px" : "70vh",
         chatMaxHeight: "60vh",
       },
       laptop: {
-        bottom: minimized ? "5vh" : "8vh",
-        maxHeight: minimized ? "8.5vh" : "70vh",
+        bottom: minimized ? "47px" : "47px",
+        maxHeight: minimized ? "60px" : "70vh",
         chatMaxHeight: "65vh",
       },
       desktop: {
-        bottom: minimized ? "3vh" : "5vh",
-        maxHeight: minimized ? "9vh" : "70vh",
+        bottom: minimized ? "47px" : "47px",
+        maxHeight: minimized ? "60px" : "70vh",
         chatMaxHeight: "65vh",
       },
       largeDesktop: {
-        bottom: minimized ? "4.5vh" : "5.5vh",
-        maxHeight: minimized ? "4.5vh" : "70vh",
+        bottom: minimized ? "47px" : "47px",
+        maxHeight: minimized ? "60px" : "70vh",
         chatMaxHeight: "65vh",
       },
       xlargeDesktop: {
-        bottom: minimized ? "4vh" : "4vh",
-        maxHeight: minimized ? "3.5vh" : "70vh",
+        bottom: minimized ? "47px" : "47px",
+        maxHeight: minimized ? "60px" : "70vh",
         chatMaxHeight: "60vh",
       },
       xxLargeDesktop: {
-        bottom: minimized ? "4vh" : "4vh",
-        maxHeight: minimized ? "2vh" : "70vh",
+        bottom: minimized ? "47px" : "47px",
+        maxHeight: minimized ? "60px" : "70vh",
         chatMaxHeight: "65vh",
       },
       designerDesktop: {
-        bottom: minimized ? "2.5vh" : "3.5vh",
-        maxHeight: minimized ? "4vh" : "70vh",
+        bottom: minimized ? "47px" : "47px",
+        maxHeight: minimized ? "60px" : "70vh",
         chatMaxHeight: "65vh",
       },
       fourKDesktop: {
-        bottom: minimized ? "0.5vh" : "3.5vh",
-        maxHeight: minimized ? "2.5vh" : "70vh",
+        bottom: minimized ? "47px" : "47px",
+        maxHeight: minimized ? "60px" : "70vh",
         chatMaxHeight: "65vh",
       },
       xxxLargeDesktop: {
-        bottom: minimized ? "3.5vh" : "3.5vh",
-        maxHeight: minimized ? "4vh" : "70vh",
+        bottom: minimized ? "47px" : "47px",
+        maxHeight: minimized ? "60px" : "70vh",
         chatMaxHeight: "65vh",
       },
     };
@@ -448,7 +448,7 @@ const AIAssistantPopup = () => {
             ></div>
           )}
           <div
-            className={`fixed left-0 right-0 z-50 transition-all duration-300 ease-out pointer-events-none overflow-hidden ${
+            className={`fixed left-0 right-0 z-[50] transition-all duration-300 ease-out pointer-events-none overflow-hidden ${
               minimized ? "cursor-pointer" : ""
             }`}
             style={{
@@ -457,7 +457,7 @@ const AIAssistantPopup = () => {
               opacity: 1,
             }}
           >
-            <div className="relative w-full max-w-[576px] mx-auto px-2 sm:px-4">
+            <div className="relative w-full max-w-[576px] mx-auto px-2 sm:px-4" style={{ marginBottom: '-16px' }}>
               <div
                 className={`relative w-full bg-white/95 backdrop-blur-xl rounded-t-3xl shadow-2xl overflow-hidden border-t border-l border-r border-gray-200/50 flex flex-col pointer-events-auto animate-slideUp ${
                   minimized ? "cursor-pointer" : "cursor-default"
