@@ -10,7 +10,10 @@ const useResponsiveValues = () => {
       const width = window.innerWidth;
       if (width < 640) {
         setScreenSize("mobile");
-      } else if (width < 1024) {
+      } else if (width <= 800) {
+        setScreenSize("smallTablet");
+      }
+      else if (width < 1024) {
         setScreenSize("tablet");
       } else if (width < 1280) {
         setScreenSize("laptop");
@@ -22,13 +25,12 @@ const useResponsiveValues = () => {
         setScreenSize("xlargeDesktop");
       } else if (width < 1800) {
         setScreenSize("xxLargeDesktop");
-      }
-      else if (width < 1925) {
-        setScreenSize("nineteenTwentyFiveDesktop");
+      } else if (width < 1925) {
+        setScreenSize("xxxLargeDesktop");
       } else if (width < 2960) {
         setScreenSize("designerDesktop");
       } else {
-        setScreenSize("fourteenKDesktop");
+        setScreenSize("fourKDesktop");
       }
     };
 
@@ -44,6 +46,11 @@ const useResponsiveValues = () => {
         maxHeight: minimized ? "8vh" : "45vh",
         chatMaxHeight: "40vh",
       },
+      smallTablet: {
+        bottom: minimized ? "8vh" : "5vh",
+        maxHeight: minimized ? "8vh" : "70vh",
+        chatMaxHeight: "65vh",
+      },
       tablet: {
         bottom: minimized ? "7vh" : "8vh",
         maxHeight: minimized ? "7vh" : "70vh",
@@ -51,11 +58,11 @@ const useResponsiveValues = () => {
       },
       laptop: {
         bottom: minimized ? "5vh" : "8vh",
-        maxHeight: minimized ? "8.5vh" : "50vh",
-        chatMaxHeight: "45vh",
+        maxHeight: minimized ? "8.5vh" : "70vh",
+        chatMaxHeight: "65vh",
       },
       desktop: {
-        bottom: minimized ? "3.5vh" : "5vh",
+        bottom: minimized ? "3vh" : "5vh",
         maxHeight: minimized ? "9vh" : "70vh",
         chatMaxHeight: "65vh",
       },
@@ -66,27 +73,27 @@ const useResponsiveValues = () => {
       },
       xlargeDesktop: {
         bottom: minimized ? "4vh" : "4vh",
-        maxHeight: minimized ? "2.5vh" : "50vh",
-        chatMaxHeight: "45vh",
+        maxHeight: minimized ? "3.5vh" : "70vh",
+        chatMaxHeight: "60vh",
       },
       xxLargeDesktop: {
         bottom: minimized ? "4vh" : "4vh",
-        maxHeight: minimized ? "2vh" : "50vh",
-        chatMaxHeight: "45vh",
+        maxHeight: minimized ? "2vh" : "70vh",
+        chatMaxHeight: "65vh",
       },
       designerDesktop: {
         bottom: minimized ? "2.5vh" : "3.5vh",
-        maxHeight: minimized ? "4vh" : "50vh",
-        chatMaxHeight: "40vh",
+        maxHeight: minimized ? "4vh" : "70vh",
+        chatMaxHeight: "65vh",
       },
-      fourteenKDesktop: {
+      fourKDesktop: {
         bottom: minimized ? "0.5vh" : "3.5vh",
-        maxHeight: minimized ? "2.5vh" : "50vh",
-        chatMaxHeight: "40vh",
+        maxHeight: minimized ? "2.5vh" : "70vh",
+        chatMaxHeight: "65vh",
       },
-      nineteenTwentyFiveDesktop: {
-        bottom: minimized ? "2vh" : "5vh",
-        maxHeight: minimized ? "7vh" : "70vh",
+      xxxLargeDesktop: {
+        bottom: minimized ? "3.5vh" : "3.5vh",
+        maxHeight: minimized ? "4vh" : "70vh",
         chatMaxHeight: "65vh",
       },
     };
