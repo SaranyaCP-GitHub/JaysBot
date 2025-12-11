@@ -4,16 +4,21 @@ import { Send, Mic, X, Sparkles, ChevronDown } from "lucide-react";
 // Custom hook for responsive breakpoints
 const useResponsiveValues = () => {
   const [screenSize, setScreenSize] = useState("laptop");
+  const [viewport, setViewport] = useState({ width: 1024, height: 800 });
 
   useEffect(() => {
     const updateScreenSize = () => {
       const width = window.innerWidth;
+      const height = window.innerHeight;
+
+      // Update viewport dimensions
+      setViewport({ width, height });
+
       if (width < 640) {
         setScreenSize("mobile");
       } else if (width <= 800) {
         setScreenSize("smallTablet");
-      }
-      else if (width < 1024) {
+      } else if (width < 1024) {
         setScreenSize("tablet");
       } else if (width < 1280) {
         setScreenSize("laptop");
@@ -40,67 +45,53 @@ const useResponsiveValues = () => {
   }, []);
 
   const getModalStyles = (minimized) => {
-    const styles = {
-      mobile: {
-        bottom: minimized ? "39px" : "39px",
-        maxHeight: minimized ? "60px" : "45vh",
-        chatMaxHeight: "40vh",
-      },
-      smallTablet: {
-        bottom: minimized ? "47px" : "47px",
-        maxHeight: minimized ? "60px" : "70vh",
-        chatMaxHeight: "65vh",
-      },
-      tablet: {
-        bottom: minimized ? "47px" : "47px",
-        maxHeight: minimized ? "60px" : "70vh",
-        chatMaxHeight: "60vh",
-      },
-      laptop: {
-        bottom: minimized ? "47px" : "47px",
-        maxHeight: minimized ? "60px" : "70vh",
-        chatMaxHeight: "65vh",
-      },
-      desktop: {
-        bottom: minimized ? "47px" : "47px",
-        maxHeight: minimized ? "60px" : "70vh",
-        chatMaxHeight: "65vh",
-      },
-      largeDesktop: {
-        bottom: minimized ? "47px" : "47px",
-        maxHeight: minimized ? "60px" : "70vh",
-        chatMaxHeight: "65vh",
-      },
-      xlargeDesktop: {
-        bottom: minimized ? "47px" : "47px",
-        maxHeight: minimized ? "60px" : "70vh",
-        chatMaxHeight: "60vh",
-      },
-      xxLargeDesktop: {
-        bottom: minimized ? "47px" : "47px",
-        maxHeight: minimized ? "60px" : "70vh",
-        chatMaxHeight: "65vh",
-      },
-      designerDesktop: {
-        bottom: minimized ? "47px" : "47px",
-        maxHeight: minimized ? "60px" : "70vh",
-        chatMaxHeight: "65vh",
-      },
-      fourKDesktop: {
-        bottom: minimized ? "47px" : "47px",
-        maxHeight: minimized ? "60px" : "70vh",
-        chatMaxHeight: "65vh",
-      },
-      xxxLargeDesktop: {
-        bottom: minimized ? "47px" : "47px",
-        maxHeight: minimized ? "60px" : "70vh",
-        chatMaxHeight: "65vh",
-      },
+    // Use tracked viewport state for reactivity on resize
+    const { width: viewportWidth, height: viewportHeight } = viewport;
+
+    // Bottom position: scales with viewport, accounts for input bar height
+    // Input bar is ~64px (48px height + 16px padding), use clamp for bounds
+
+    const minimizedBottomBase = Math.max(
+      39,
+      Math.min(64, viewportHeight * 0.07)
+    );
+
+    const bottomBase = Math.max(39, Math.min(64, viewportHeight * 0.1));
+
+    // Minimized height: scales slightly with viewport but stays compact
+    const minimizedHeight =
+      viewportHeight < 768
+        ? Math.max(50, Math.min(70, viewportHeight * 0.08))
+        : viewportHeight < 1024
+        ? Math.max(50, Math.min(70, viewportHeight * 0.05))
+        : viewportHeight < 1280
+        ? Math.max(50, Math.min(70, viewportHeight * 0.04))
+        : Math.max(50, Math.min(70, viewportHeight * 0.01));
+
+    // Expanded max height: responsive to viewport height
+    // Mobile gets less height (45vh), larger screens get more (up to 75vh)
+    const expandedMaxHeight =
+      viewportWidth < 640
+        ? Math.min(viewportHeight * 0.5, viewportHeight - 120)
+        : viewportWidth < 768
+        ? Math.min(viewportHeight * 0.5, viewportHeight - 110)
+        : viewportWidth < 1024
+        ? Math.min(viewportHeight * 0.5, viewportHeight - 100)
+        : viewportWidth < 1280
+        ? Math.min(viewportHeight * 0.55, viewportHeight - 100)
+        : Math.min(viewportHeight * 0.55, viewportHeight - 60);
+
+    // Chat container max height: slightly less than modal to account for header
+    const chatHeight = expandedMaxHeight - 60;
+
+    return {
+      bottom: minimized ? `${minimizedBottomBase}px` : `${bottomBase}px`,
+      maxHeight: minimized ? `${minimizedHeight}px` : `${expandedMaxHeight}px`,
+      chatMaxHeight: `${chatHeight}px`,
     };
-    return styles[screenSize];
   };
 
-  return { screenSize, getModalStyles };
+  return { screenSize, viewport, getModalStyles };
 };
 
 const AIAssistantPopup = () => {
@@ -335,7 +326,6 @@ const AIAssistantPopup = () => {
 
   return (
     <div className="bg-transparent relative overflow-auto">
-
       {/* Bottom fixed input - slides in from bottom when scrolled or animation step 2+ */}
       {!hasSearched && (
         <div
@@ -362,17 +352,21 @@ const AIAssistantPopup = () => {
                   <button
                     onClick={handleSearch}
                     className={`p-1.5 sm:p-2 rounded-full transition-all hover:scale-105 ${
-                      query.trim() 
-                        ? "bg-[#818cf8] hover:bg-[#6366f1]" 
-                        : isMicActive 
-                        ? "bg-[#818cf8] hover:bg-[#6366f1] mic-pulse" 
+                      query.trim()
+                        ? "bg-[#818cf8] hover:bg-[#6366f1]"
+                        : isMicActive
+                        ? "bg-[#818cf8] hover:bg-[#6366f1] mic-pulse"
                         : "bg-transparent"
                     }`}
                   >
                     {query.trim() ? (
                       <Send className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
                     ) : (
-                      <Mic className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${isMicActive ? "text-white" : "text-[#818cf8]"}`} />
+                      <Mic
+                        className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${
+                          isMicActive ? "text-white" : "text-[#818cf8]"
+                        }`}
+                      />
                     )}
                   </button>
                 </div>
@@ -395,7 +389,7 @@ const AIAssistantPopup = () => {
         {!hasSearched && (
           <div
             ref={heroInputRef}
-            style={{overflow: "visible", paddingBottom: "9px"}}
+            style={{ overflow: "visible", paddingBottom: "9px" }}
             className={`w-full max-w-[656px] px-2 sm:px-0 transition-all duration-500 ease-out overflow-hidden ${
               isScrolled || animationStep >= 1
                 ? "opacity-0 scale-95 pointer-events-none max-h-0 mb-0"
@@ -417,17 +411,21 @@ const AIAssistantPopup = () => {
                   <button
                     onClick={handleSearch}
                     className={`p-1.5 sm:p-2 rounded-full transition-all hover:scale-105 ${
-                      query.trim() 
-                        ? "bg-[#818cf8] hover:bg-[#6366f1]" 
-                        : isMicActive 
-                        ? "bg-[#818cf8] hover:bg-[#6366f1] mic-pulse" 
+                      query.trim()
+                        ? "bg-[#818cf8] hover:bg-[#6366f1]"
+                        : isMicActive
+                        ? "bg-[#818cf8] hover:bg-[#6366f1] mic-pulse"
                         : "bg-transparent"
                     }`}
                   >
                     {query.trim() ? (
                       <Send className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
                     ) : (
-                      <Mic className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${isMicActive ? "text-white" : "text-[#818cf8]"}`} />
+                      <Mic
+                        className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${
+                          isMicActive ? "text-white" : "text-[#818cf8]"
+                        }`}
+                      />
                     )}
                   </button>
                 </div>
@@ -457,13 +455,17 @@ const AIAssistantPopup = () => {
               opacity: 1,
             }}
           >
-            <div className="relative w-full max-w-[656px] mx-auto px-2 sm:px-4" style={{ marginBottom: '-16px' }}>
+            <div
+              className="relative w-full max-w-[656px] mx-auto px-2 sm:px-4"
+              style={{ marginBottom: "-16px" }}
+            >
               <div
                 className={`relative w-full bg-white/95 backdrop-blur-xl rounded-t-3xl overflow-hidden border border-gray-200 flex flex-col pointer-events-auto animate-slideUp ${
                   minimized ? "cursor-pointer" : "cursor-default"
                 }`}
                 style={{
-                  boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06)'
+                  boxShadow:
+                    "0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06)",
                 }}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -598,7 +600,7 @@ const AIAssistantPopup = () => {
 
       {hasSearched && (
         <div className="fixed bottom-0 left-0 right-0 z-50 px-2 pb-2 sm:px-4 sm:pb-4 to-transparent">
-            <div className="w-full max-w-[656px] mx-auto">
+          <div className="w-full max-w-[656px] mx-auto">
             <div className="input-glow-container rounded-full">
               <div className="rounded-full h-12 flex items-center p-3 ">
                 <div className="flex items-center gap-2 sm:gap-3 w-full">
@@ -614,17 +616,21 @@ const AIAssistantPopup = () => {
                   <button
                     onClick={handleSearch}
                     className={`p-1.5 sm:p-2 rounded-full transition-all hover:scale-105 ${
-                      query.trim() 
-                        ? "bg-[#818cf8] hover:bg-[#6366f1]" 
-                        : isMicActive 
-                        ? "bg-[#818cf8] hover:bg-[#6366f1]" 
+                      query.trim()
+                        ? "bg-[#818cf8] hover:bg-[#6366f1]"
+                        : isMicActive
+                        ? "bg-[#818cf8] hover:bg-[#6366f1]"
                         : "bg-transparent"
                     }`}
                   >
                     {query.trim() ? (
                       <Send className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
                     ) : (
-                      <Mic className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${isMicActive ? "text-white" : "text-gray-900"}`} />
+                      <Mic
+                        className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${
+                          isMicActive ? "text-white" : "text-gray-900"
+                        }`}
+                      />
                     )}
                   </button>
                 </div>
