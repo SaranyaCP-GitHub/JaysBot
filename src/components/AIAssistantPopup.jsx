@@ -345,11 +345,11 @@ const AIAssistantPopup = () => {
               : "translate-y-full opacity-0 pointer-events-none"
           }`}
         >
-          <div className="w-full max-w-[576px] mx-auto">
+          <div className="w-full max-w-[700px] mx-auto">
             <div className="input-glow-container rounded-full">
               <div className="rounded-full h-12 flex items-center p-3 ">
                 <div className="flex items-center gap-2 sm:gap-3 w-full">
-                  <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-gray-700 flex-shrink-0" />
+                  <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-[#818cf8] flex-shrink-0" />
                   <input
                     ref={bottomInputRef}
                     type="text"
@@ -363,16 +363,16 @@ const AIAssistantPopup = () => {
                     onClick={handleSearch}
                     className={`p-1.5 sm:p-2 rounded-full transition-all hover:scale-105 ${
                       query.trim() 
-                        ? "bg-gray-700 hover:bg-gray-800" 
+                        ? "bg-[#818cf8] hover:bg-[#6366f1]" 
                         : isMicActive 
-                        ? "bg-gray-700" 
+                        ? "bg-[#818cf8] hover:bg-[#6366f1] mic-pulse" 
                         : "bg-transparent"
                     }`}
                   >
                     {query.trim() ? (
                       <Send className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
                     ) : (
-                      <Mic className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${isMicActive ? "text-white" : "text-gray-900"}`} />
+                      <Mic className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${isMicActive ? "text-white" : "text-[#818cf8]"}`} />
                     )}
                   </button>
                 </div>
@@ -387,7 +387,7 @@ const AIAssistantPopup = () => {
         {!hasSearched && (
           <div
             ref={heroSentinelRef}
-            className="w-full max-w-[576px] h-1 pointer-events-none"
+            className="w-full max-w-[700px] h-1 pointer-events-none"
           />
         )}
 
@@ -396,7 +396,7 @@ const AIAssistantPopup = () => {
           <div
             ref={heroInputRef}
             style={{overflow: "visible", paddingBottom: "9px"}}
-            className={`w-full max-w-[576px] px-2 sm:px-0 transition-all duration-500 ease-out overflow-hidden ${
+            className={`w-full max-w-[700px] px-2 sm:px-0 transition-all duration-500 ease-out overflow-hidden ${
               isScrolled || animationStep >= 1
                 ? "opacity-0 scale-95 pointer-events-none max-h-0 mb-0"
                 : "opacity-100 scale-100 max-h-32"
@@ -405,7 +405,7 @@ const AIAssistantPopup = () => {
             <div className="input-glow-container rounded-full">
               <div className="rounded-full h-12 flex items-center p-3 ">
                 <div className="flex items-center gap-2 sm:gap-3 w-full">
-                  <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-gray-700 flex-shrink-0" />
+                  <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-[#818cf8] flex-shrink-0" />
                   <input
                     type="text"
                     value={query}
@@ -418,16 +418,16 @@ const AIAssistantPopup = () => {
                     onClick={handleSearch}
                     className={`p-1.5 sm:p-2 rounded-full transition-all hover:scale-105 ${
                       query.trim() 
-                        ? "bg-gray-700 hover:bg-gray-800" 
+                        ? "bg-[#818cf8] hover:bg-[#6366f1]" 
                         : isMicActive 
-                        ? "bg-gray-700" 
+                        ? "bg-[#818cf8] hover:bg-[#6366f1] mic-pulse" 
                         : "bg-transparent"
                     }`}
                   >
                     {query.trim() ? (
                       <Send className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
                     ) : (
-                      <Mic className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${isMicActive ? "text-white" : "text-gray-900"}`} />
+                      <Mic className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${isMicActive ? "text-white" : "text-[#818cf8]"}`} />
                     )}
                   </button>
                 </div>
@@ -457,11 +457,14 @@ const AIAssistantPopup = () => {
               opacity: 1,
             }}
           >
-            <div className="relative w-full max-w-[576px] mx-auto px-2 sm:px-4" style={{ marginBottom: '-16px' }}>
+            <div className="relative w-full max-w-[700px] mx-auto px-2 sm:px-4" style={{ marginBottom: '-16px' }}>
               <div
-                className={`relative w-full bg-white/95 backdrop-blur-xl rounded-t-3xl shadow-2xl overflow-hidden border-t border-l border-r border-gray-200/50 flex flex-col pointer-events-auto animate-slideUp ${
+                className={`relative w-full bg-white/95 backdrop-blur-xl rounded-t-3xl overflow-hidden border border-gray-200 flex flex-col pointer-events-auto animate-slideUp ${
                   minimized ? "cursor-pointer" : "cursor-default"
                 }`}
+                style={{
+                  boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06)'
+                }}
                 onClick={(e) => {
                   e.stopPropagation();
                   if (minimized) {
@@ -549,13 +552,13 @@ const AIAssistantPopup = () => {
                             </div>
                           </div>
                         ) : (
-                          <div className="flex items-start gap-2 sm:gap-3">
+                          <div className="flex items-center gap-2 sm:gap-3">
                             <div className="flex-shrink-0 w-6 h-6 sm:w-8 sm:h-8 rounded-full bg-gradient-to-br from-[#a78bfa] to-[#818cf8] flex items-center justify-center shadow-sm">
                               <Sparkles className="w-3 h-3 sm:w-4 sm:h-4 text-white" />
                             </div>
-                            <div className="flex-1">
+                            <div className="flex-1 min-w-0">
                               <div className="bg-gradient-to-br from-[#f3f0ff] to-[#faf8ff] rounded-2xl rounded-tl-none p-3 shadow-sm border border-[#e9d5ff]/30">
-                                <p className="text-gray-700 text-sm sm:text-base leading-relaxed">
+                                <p className="text-gray-700 text-sm sm:text-base leading-relaxed break-words">
                                   {message.text}
                                 </p>
                               </div>
@@ -566,12 +569,12 @@ const AIAssistantPopup = () => {
                     ))}
 
                     {isTyping && (
-                      <div className="flex items-start gap-3 animate-fadeIn">
+                      <div className="flex items-center gap-3 animate-fadeIn">
                         <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-[#a78bfa] to-[#818cf8] flex items-center justify-center shadow-sm">
                           <Sparkles className="w-4 h-4 text-white" />
                         </div>
                         <div className="flex bg-gradient-to-br from-[#f3f0ff] to-[#faf8ff] rounded-2xl rounded-tl-none p-4 shadow-sm border border-[#e9d5ff]/30">
-                          <div className="flex gap-2">
+                          <div className="flex gap-2 items-center">
                             <div className="w-2 h-2 bg-[#818cf8] rounded-full animate-bounce"></div>
                             <div
                               className="w-2 h-2 bg-[#818cf8] rounded-full animate-bounce"
@@ -595,11 +598,11 @@ const AIAssistantPopup = () => {
 
       {hasSearched && (
         <div className="fixed bottom-0 left-0 right-0 z-50 px-2 pb-2 sm:px-4 sm:pb-4 to-transparent">
-            <div className="w-full max-w-[576px] mx-auto">
+            <div className="w-full max-w-[700px] mx-auto">
             <div className="input-glow-container rounded-full">
               <div className="rounded-full h-12 flex items-center p-3 ">
                 <div className="flex items-center gap-2 sm:gap-3 w-full">
-                  <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-gray-700 flex-shrink-0" />
+                  <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-[#818cf8] flex-shrink-0" />
                   <input
                     type="text"
                     value={query}
@@ -612,9 +615,9 @@ const AIAssistantPopup = () => {
                     onClick={handleSearch}
                     className={`p-1.5 sm:p-2 rounded-full transition-all hover:scale-105 ${
                       query.trim() 
-                        ? "bg-gray-700 hover:bg-gray-800" 
+                        ? "bg-[#818cf8] hover:bg-[#6366f1]" 
                         : isMicActive 
-                        ? "bg-gray-700" 
+                        ? "bg-[#818cf8] hover:bg-[#6366f1]" 
                         : "bg-transparent"
                     }`}
                   >
@@ -710,6 +713,51 @@ const AIAssistantPopup = () => {
 
         .input-glow-container:focus-within > div {
           background: linear-gradient(135deg, #ede9fe 0%, #f5f3ff 100%);
+        }
+        
+        @keyframes micPulse {
+          0% {
+            box-shadow: 0 0 0 0 rgba(129, 140, 248, 0.8),
+                        0 0 0 0 rgba(129, 140, 248, 0.6);
+          }
+          50% {
+            box-shadow: 0 0 0 12px rgba(129, 140, 248, 0.3),
+                        0 0 0 20px rgba(129, 140, 248, 0.1);
+          }
+          100% {
+            box-shadow: 0 0 0 0 rgba(129, 140, 248, 0),
+                        0 0 0 0 rgba(129, 140, 248, 0);
+          }
+        }
+        
+        .mic-pulse {
+          animation: micPulse 1.2s ease-out infinite;
+          position: relative;
+        }
+        
+        .mic-pulse::before {
+          content: '';
+          position: absolute;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%);
+          width: 100%;
+          height: 100%;
+          border-radius: 50%;
+          background: radial-gradient(circle, rgba(129, 140, 248, 0.3) 0%, transparent 70%);
+          animation: micPulseInner 1.2s ease-out infinite;
+          pointer-events: none;
+        }
+        
+        @keyframes micPulseInner {
+          0% {
+            transform: translate(-50%, -50%) scale(1);
+            opacity: 0.6;
+          }
+          100% {
+            transform: translate(-50%, -50%) scale(2.5);
+            opacity: 0;
+          }
         }
       `}</style>
     </div>
