@@ -384,7 +384,7 @@ const AIAssistantPopup = () => {
                     className={`p-1.5 sm:p-2 rounded-full transition-all hover:scale-105 ${
                       query.trim()
                         ? "bg-[#6366f1] hover:bg-[#4f46e5]"
-                        : "bg-[#818cf8]/70 hover:bg-[#818cf8]/80 cursor-not-allowed"
+                        : "bg-[#818cf8] hover:bg-[#818cf8]/90 cursor-not-allowed opacity-90"
                     }`}
                     disabled={!query.trim()}
                   >
@@ -648,7 +648,7 @@ const AIAssistantPopup = () => {
                     className={`p-1.5 sm:p-2 rounded-full transition-all hover:scale-105 ${
                       query.trim()
                         ? "bg-[#6366f1] hover:bg-[#4f46e5]"
-                        : "bg-[#818cf8]/70 hover:bg-[#818cf8]/80 cursor-not-allowed"
+                        : "bg-[#818cf8] hover:bg-[#818cf8]/90 cursor-not-allowed opacity-90"
                     }`}
                     disabled={!query.trim()}
                   >
