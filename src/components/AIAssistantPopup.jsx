@@ -106,12 +106,20 @@ const AIAssistantPopup = () => {
   const [animationStep, setAnimationStep] = useState(0); // 0: initial, 1: hero fading, 2: bottom showing, 3: modal showing
   const [sessionKey, setSessionKey] = useState(null);
   const [isMicActive, setIsMicActive] = useState(false);
+  const [placeholderIndex, setPlaceholderIndex] = useState(0);
+  const [isHeroInputFocused, setIsHeroInputFocused] = useState(false);
   const chatContainerRef = useRef(null);
   const bottomInputRef = useRef(null);
   const heroInputRef = useRef(null);
   const heroSentinelRef = useRef(null);
   const { screenSize, getModalStyles } = useResponsiveValues();
   const modalStyles = getModalStyles(minimized);
+
+  const placeholderQuestions = [
+    "What does Techjays do?",
+    "How can you help me with my project?",
+    "How do I get in touch with your team?"
+  ];
 
   // Use Intersection Observer to detect when hero input leaves viewport
   useEffect(() => {
@@ -200,18 +208,32 @@ const AIAssistantPopup = () => {
     getSessionKey();
   }, []);
 
+  // Rotate placeholder text every 4 seconds (only for hero input, pause when focused)
+  useEffect(() => {
+    if (hasSearched || isHeroInputFocused) return; // Stop rotating after first search or when focused
+    
+    const interval = setInterval(() => {
+      setPlaceholderIndex((prevIndex) => (prevIndex + 1) % placeholderQuestions.length);
+    }, 4000);
+
+    return () => clearInterval(interval);
+  }, [hasSearched, isHeroInputFocused, placeholderQuestions.length]);
+
   const handleMicToggle = () => {
     setIsMicActive(!isMicActive);
     // TODO: Add actual microphone recording functionality here
   };
 
   const handleSearch = async () => {
-    if (!query.trim()) {
-      handleMicToggle();
+    // If query is empty, use the current placeholder text (only for hero input)
+    let userMessage = query.trim();
+    if (!userMessage && !hasSearched) {
+      userMessage = placeholderQuestions[placeholderIndex];
+    }
+    
+    if (!userMessage) {
       return;
     }
-
-    const userMessage = query;
 
     // Get or initialize session key
     const currentSessionKey = await getSessionKey();
@@ -352,22 +374,13 @@ const AIAssistantPopup = () => {
                   <button
                     onClick={handleSearch}
                     className={`p-1.5 sm:p-2 rounded-full transition-all hover:scale-105 ${
-                      query.trim()
-                        ? "bg-[#818cf8] hover:bg-[#6366f1]"
-                        : isMicActive
-                        ? "bg-[#818cf8] hover:bg-[#6366f1] mic-pulse"
-                        : "bg-transparent"
+                      query.trim() 
+                        ? "bg-[#818cf8] hover:bg-[#6366f1]" 
+                        : "bg-[#818cf8]/50 hover:bg-[#818cf8]/70 cursor-not-allowed"
                     }`}
+                    disabled={!query.trim()}
                   >
-                    {query.trim() ? (
                       <Send className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
-                    ) : (
-                      <Mic
-                        className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${
-                          isMicActive ? "text-white" : "text-[#818cf8]"
-                        }`}
-                      />
-                    )}
                   </button>
                 </div>
               </div>
@@ -405,28 +418,20 @@ const AIAssistantPopup = () => {
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                     onKeyPress={(e) => e.key === "Enter" && handleSearch()}
-                    placeholder="Ask us anything about Techjays"
-                    className="flex-1 text-base text-gray-800 placeholder:text-base placeholder-gray-400 focus:outline-none bg-transparent"
+                    onFocus={() => setIsHeroInputFocused(true)}
+                    onBlur={() => setIsHeroInputFocused(false)}
+                    placeholder={placeholderQuestions[placeholderIndex]}
+                    className="flex-1 text-base text-gray-800 placeholder:text-base placeholder-gray-800 focus:outline-none bg-transparent"
                   />
                   <button
                     onClick={handleSearch}
                     className={`p-1.5 sm:p-2 rounded-full transition-all hover:scale-105 ${
-                      query.trim()
-                        ? "bg-[#818cf8] hover:bg-[#6366f1]"
-                        : isMicActive
-                        ? "bg-[#818cf8] hover:bg-[#6366f1] mic-pulse"
-                        : "bg-transparent"
+                      query.trim() 
+                        ? "bg-[#818cf8] hover:bg-[#6366f1]" 
+                        : "bg-[#818cf8] hover:bg-[#6366f1]"
                     }`}
                   >
-                    {query.trim() ? (
                       <Send className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
-                    ) : (
-                      <Mic
-                        className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${
-                          isMicActive ? "text-white" : "text-[#818cf8]"
-                        }`}
-                      />
-                    )}
                   </button>
                 </div>
               </div>
@@ -616,22 +621,13 @@ const AIAssistantPopup = () => {
                   <button
                     onClick={handleSearch}
                     className={`p-1.5 sm:p-2 rounded-full transition-all hover:scale-105 ${
-                      query.trim()
-                        ? "bg-[#818cf8] hover:bg-[#6366f1]"
-                        : isMicActive
-                        ? "bg-[#818cf8] hover:bg-[#6366f1]"
-                        : "bg-transparent"
+                      query.trim() 
+                        ? "bg-[#818cf8] hover:bg-[#6366f1]" 
+                        : "bg-[#818cf8]/50 hover:bg-[#818cf8]/70 cursor-not-allowed"
                     }`}
+                    disabled={!query.trim()}
                   >
-                    {query.trim() ? (
                       <Send className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
-                    ) : (
-                      <Mic
-                        className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${
-                          isMicActive ? "text-white" : "text-gray-900"
-                        }`}
-                      />
-                    )}
                   </button>
                 </div>
               </div>
