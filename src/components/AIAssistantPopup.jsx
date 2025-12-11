@@ -45,49 +45,55 @@ const useResponsiveValues = () => {
   }, []);
 
   const getModalStyles = (minimized) => {
-    // Use tracked viewport state for reactivity on resize
-    const { width: viewportWidth, height: viewportHeight } = viewport;
+    const { width, height } = viewport;
 
-    // Bottom position: scales with viewport, accounts for input bar height
-    // Input bar is ~64px (48px height + 16px padding), use clamp for bounds
+    // Simple breakpoint-based styles - easy to adjust manually
+    // Format: { bottom, minimizedHeight, expandedMaxHeight, chatMaxHeight }
 
-    const minimizedBottomBase = Math.max(
-      39,
-      Math.min(64, viewportHeight * 0.07)
-    );
+    let bottom, minimizedHeight, expandedMaxHeight, chatMaxHeight;
 
-    const bottomBase = Math.max(39, Math.min(64, viewportHeight * 0.1));
-
-    // Minimized height: scales slightly with viewport but stays compact
-    const minimizedHeight =
-      viewportHeight < 768
-        ? Math.max(50, Math.min(70, viewportHeight * 0.08))
-        : viewportHeight < 1024
-        ? Math.max(50, Math.min(70, viewportHeight * 0.05))
-        : viewportHeight < 1280
-        ? Math.max(50, Math.min(70, viewportHeight * 0.04))
-        : Math.max(50, Math.min(70, viewportHeight * 0.01));
-
-    // Expanded max height: responsive to viewport height
-    // Mobile gets less height (45vh), larger screens get more (up to 75vh)
-    const expandedMaxHeight =
-      viewportWidth < 640
-        ? Math.min(viewportHeight * 0.5, viewportHeight - 120)
-        : viewportWidth < 768
-        ? Math.min(viewportHeight * 0.5, viewportHeight - 110)
-        : viewportWidth < 1024
-        ? Math.min(viewportHeight * 0.5, viewportHeight - 100)
-        : viewportWidth < 1280
-        ? Math.min(viewportHeight * 0.55, viewportHeight - 100)
-        : Math.min(viewportHeight * 0.55, viewportHeight - 60);
-
-    // Chat container max height: slightly less than modal to account for header
-    const chatHeight = expandedMaxHeight - 60;
+    if (width < 640) {
+      // Mobile
+      bottom = "48px";
+      minimizedHeight = "56px";
+      expandedMaxHeight = "45vh";
+      chatMaxHeight = "38vh";
+    } else if (width < 768) {
+      // Small tablet
+      bottom = "52px";
+      minimizedHeight = "58px";
+      expandedMaxHeight = "50vh";
+      chatMaxHeight = "43vh";
+    } else if (width < 1024) {
+      // Tablet
+      bottom = "52px";
+      minimizedHeight = "60px";
+      expandedMaxHeight = "55vh";
+      chatMaxHeight = "48vh";
+    } else if (width < 1280) {
+      // Laptop
+      bottom = "52px";
+      minimizedHeight = "60px";
+      expandedMaxHeight = "60vh";
+      chatMaxHeight = "53vh";
+    } else if (width < 1536) {
+      // Desktop
+      bottom = "52px";
+      minimizedHeight = "60px";
+      expandedMaxHeight = "65vh";
+      chatMaxHeight = "58vh";
+    } else {
+      // Large desktop / 4K
+      bottom = "52px";
+      minimizedHeight = "60px";
+      expandedMaxHeight = "70vh";
+      chatMaxHeight = "63vh";
+    }
 
     return {
-      bottom: minimized ? `${minimizedBottomBase}px` : `${bottomBase}px`,
-      maxHeight: minimized ? `${minimizedHeight}px` : `${expandedMaxHeight}px`,
-      chatMaxHeight: `${chatHeight}px`,
+      bottom: bottom,
+      maxHeight: minimized ? minimizedHeight : expandedMaxHeight,
+      chatMaxHeight: chatMaxHeight,
     };
   };
 
@@ -118,7 +124,7 @@ const AIAssistantPopup = () => {
   const placeholderQuestions = [
     "What does Techjays do?",
     "How can you help me with my project?",
-    "How do I get in touch with your team?"
+    "How do I get in touch with your team?",
   ];
 
   // Use Intersection Observer to detect when hero input leaves viewport
@@ -211,9 +217,11 @@ const AIAssistantPopup = () => {
   // Rotate placeholder text every 4 seconds (only for hero input, pause when focused)
   useEffect(() => {
     if (hasSearched || isHeroInputFocused) return; // Stop rotating after first search or when focused
-    
+
     const interval = setInterval(() => {
-      setPlaceholderIndex((prevIndex) => (prevIndex + 1) % placeholderQuestions.length);
+      setPlaceholderIndex(
+        (prevIndex) => (prevIndex + 1) % placeholderQuestions.length
+      );
     }, 4000);
 
     return () => clearInterval(interval);
@@ -230,7 +238,7 @@ const AIAssistantPopup = () => {
     if (!userMessage && !hasSearched) {
       userMessage = placeholderQuestions[placeholderIndex];
     }
-    
+
     if (!userMessage) {
       return;
     }
@@ -374,13 +382,13 @@ const AIAssistantPopup = () => {
                   <button
                     onClick={handleSearch}
                     className={`p-1.5 sm:p-2 rounded-full transition-all hover:scale-105 ${
-                      query.trim() 
-                        ? "bg-[#6366f1] hover:bg-[#4f46e5]" 
+                      query.trim()
+                        ? "bg-[#6366f1] hover:bg-[#4f46e5]"
                         : "bg-[#818cf8]/70 hover:bg-[#818cf8]/80 cursor-not-allowed"
                     }`}
                     disabled={!query.trim()}
                   >
-                      <Send className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
+                    <Send className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
                   </button>
                 </div>
               </div>
@@ -410,18 +418,22 @@ const AIAssistantPopup = () => {
             }`}
           >
             <div className="input-glow-container rounded-full">
-              <div className="rounded-full h-12 flex items-center p-3 ">
+              <div className="rounded-full max-h-18 flex items-center p-3 ">
                 <div className="flex items-center gap-2 sm:gap-3 w-full relative">
                   <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-[#818cf8] flex-shrink-0" />
                   <div className="flex-1 relative">
-                  <input
-                    type="text"
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    onKeyPress={(e) => e.key === "Enter" && handleSearch()}
+                    <input
+                      type="text"
+                      value={query}
+                      onChange={(e) => setQuery(e.target.value)}
+                      onKeyPress={(e) => e.key === "Enter" && handleSearch()}
                       onFocus={() => setIsHeroInputFocused(true)}
                       onBlur={() => setIsHeroInputFocused(false)}
-                      placeholder={isHeroInputFocused ? "Ask us anything about Techjays" : ""}
+                      placeholder={
+                        isHeroInputFocused
+                          ? "Ask us anything about Techjays"
+                          : ""
+                      }
                       className={`w-full text-base text-gray-800 placeholder:text-base focus:outline-none bg-transparent ${
                         isHeroInputFocused ? "placeholder-gray-400" : ""
                       }`}
@@ -431,7 +443,10 @@ const AIAssistantPopup = () => {
                         key={placeholderIndex}
                         className="absolute left-0 top-0 w-full h-full flex items-center pointer-events-none animate-placeholderSlide"
                       >
-                        <span className="text-base text-gray-800">
+                        <span
+                          className="text-gray-800"
+                          style={{ fontSize: "16px", lineHeight: "19px" }}
+                        >
                           {placeholderQuestions[placeholderIndex]}
                         </span>
                       </div>
@@ -441,7 +456,7 @@ const AIAssistantPopup = () => {
                     onClick={handleSearch}
                     className="p-1.5 sm:p-2 rounded-full transition-all hover:scale-105 bg-[#6366f1] hover:bg-[#4f46e5]"
                   >
-                      <Send className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
+                    <Send className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
                   </button>
                 </div>
               </div>
@@ -461,7 +476,7 @@ const AIAssistantPopup = () => {
             ></div>
           )}
           <div
-            className={`fixed left-0 right-0 z-[50] transition-all duration-300 ease-out pointer-events-none overflow-hidden ${
+            className={`fixed left-1 right-1 z-[50] transition-all duration-300 ease-out pointer-events-none overflow-hidden ${
               minimized ? "cursor-pointer" : ""
             }`}
             style={{
@@ -509,11 +524,11 @@ const AIAssistantPopup = () => {
                 </button> */}
 
                 {minimized && (chatHistory.length > 0 || isTyping) && (
-                  <div className="absolute top-2 left-8 right-8 flex items-center gap-3 text-gray-800 text-base overflow-hidden">
+                  <div className="absolute top-2 left-3 right-3 flex items-center gap-3 text-gray-800 text-base overflow-hidden">
                     <div className="flex-shrink-0 w-6 h-6 rounded-full bg-gradient-to-br from-[#a78bfa] to-[#818cf8] flex items-center justify-center">
                       <Sparkles className="w-3 h-3 text-white" />
                     </div>
-                    <div className="flex-1">
+                    <div className="flex-1 min-w-0">
                       {isTyping ? (
                         <div className="flex items-center gap-1.5 ">
                           <div className="w-1.5 h-1.5 bg-[#818cf8] rounded-full animate-bounce"></div>
@@ -529,7 +544,7 @@ const AIAssistantPopup = () => {
                       ) : (
                         chatHistory[chatHistory.length - 1] &&
                         chatHistory[chatHistory.length - 1].type === "ai" && (
-                          <p className="text-ellipsis overflow-hidden whitespace-nowrap max-w-[85%]">
+                          <p className="text-ellipsis overflow-hidden whitespace-nowrap ">
                             {chatHistory[chatHistory.length - 1].text}
                           </p>
                         )
@@ -548,11 +563,11 @@ const AIAssistantPopup = () => {
                 >
                   <div
                     ref={chatContainerRef}
-                    className="overflow-y-auto px-4 sm:px-6 pt-1 pb-10 space-y-4 pointer-events-auto"
+                    className="overflow-y-auto px-4 sm:px-6 pt-1 pb-10 mb-2 space-y-4 pointer-events-auto"
                     style={{
                       scrollBehavior: "smooth",
                       scrollbarWidth: "thin",
-                      scrollbarColor: "gray transparent",
+                      scrollbarColor: "#e5e7eb transparent",
                       WebkitOverflowScrolling: "touch",
                       overscrollBehavior: "contain",
                       maxHeight: modalStyles.chatMaxHeight,
@@ -569,8 +584,8 @@ const AIAssistantPopup = () => {
                             </div>
                           </div>
                         ) : (
-                          <div className="flex items-center gap-2 sm:gap-3">
-                            <div className="flex-shrink-0 w-6 h-6 sm:w-8 sm:h-8 rounded-full bg-gradient-to-br from-[#a78bfa] to-[#818cf8] flex items-center justify-center shadow-sm">
+                          <div className="flex gap-2 sm:gap-3 ">
+                            <div className="flex-shrink-0 w-6 h-6 sm:w-8 sm:h-8 rounded-full bg-gradient-to-br from-[#a78bfa] to-[#818cf8] flex items-center justify-center shadow-sm mt-3">
                               <Sparkles className="w-3 h-3 sm:w-4 sm:h-4 text-white" />
                             </div>
                             <div className="flex-shrink-0 max-w-[85%] sm:max-w-[75%]">
@@ -631,13 +646,13 @@ const AIAssistantPopup = () => {
                   <button
                     onClick={handleSearch}
                     className={`p-1.5 sm:p-2 rounded-full transition-all hover:scale-105 ${
-                      query.trim() 
-                        ? "bg-[#6366f1] hover:bg-[#4f46e5]" 
+                      query.trim()
+                        ? "bg-[#6366f1] hover:bg-[#4f46e5]"
                         : "bg-[#818cf8]/70 hover:bg-[#818cf8]/80 cursor-not-allowed"
                     }`}
                     disabled={!query.trim()}
                   >
-                      <Send className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
+                    <Send className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
                   </button>
                 </div>
               </div>
@@ -692,7 +707,7 @@ const AIAssistantPopup = () => {
         
         .input-glow-container {
           position: relative;
-          padding: 2px;
+          padding: 3px;
           border-radius: 50px;
           background: linear-gradient(
             90deg,
