@@ -418,7 +418,7 @@ const AIAssistantPopup = () => {
             }`}
           >
             <div className="input-glow-container rounded-full">
-              <div className="rounded-full max-h-18 flex items-center p-3 ">
+              <div className="rounded-full h-13 flex items-center p-3 ">
                 <div className="flex items-center gap-2 sm:gap-3 w-full relative">
                   <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-[#818cf8] flex-shrink-0" />
                   <div className="flex-1 relative">
@@ -441,11 +441,11 @@ const AIAssistantPopup = () => {
                     {!isHeroInputFocused && !query.trim() && (
                       <div
                         key={placeholderIndex}
-                        className="absolute left-0 top-0 w-full h-full flex items-center pointer-events-none animate-placeholderSlide"
+                        className="absolute left-0 top-0 w-full h-full flex items-center pointer-events-none animate-placeholderSlide bg-transparent"
                       >
                         <span
                           className="text-gray-800"
-                          style={{ fontSize: "16px", lineHeight: "19px" }}
+                          style={{ fontSize: "1rem", lineHeight: "19px" }}
                         >
                           {placeholderQuestions[placeholderIndex]}
                         </span>
@@ -707,7 +707,7 @@ const AIAssistantPopup = () => {
         
         .input-glow-container {
           position: relative;
-          padding: 3px;
+          padding: 2.5px;
           border-radius: 50px;
           background: linear-gradient(
             90deg,
