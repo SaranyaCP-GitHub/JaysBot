@@ -411,18 +411,32 @@ const AIAssistantPopup = () => {
           >
             <div className="input-glow-container rounded-full">
               <div className="rounded-full h-12 flex items-center p-3 ">
-                <div className="flex items-center gap-2 sm:gap-3 w-full">
+                <div className="flex items-center gap-2 sm:gap-3 w-full relative">
                   <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-[#818cf8] flex-shrink-0" />
-                  <input
-                    type="text"
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    onKeyPress={(e) => e.key === "Enter" && handleSearch()}
-                    onFocus={() => setIsHeroInputFocused(true)}
-                    onBlur={() => setIsHeroInputFocused(false)}
-                    placeholder={placeholderQuestions[placeholderIndex]}
-                    className="flex-1 text-base text-gray-800 placeholder:text-base placeholder-gray-800 focus:outline-none bg-transparent"
-                  />
+                  <div className="flex-1 relative">
+                    <input
+                      type="text"
+                      value={query}
+                      onChange={(e) => setQuery(e.target.value)}
+                      onKeyPress={(e) => e.key === "Enter" && handleSearch()}
+                      onFocus={() => setIsHeroInputFocused(true)}
+                      onBlur={() => setIsHeroInputFocused(false)}
+                      placeholder={isHeroInputFocused ? "Ask us anything about Techjays" : ""}
+                      className={`w-full text-base text-gray-800 placeholder:text-base focus:outline-none bg-transparent ${
+                        isHeroInputFocused ? "placeholder-gray-400" : ""
+                      }`}
+                    />
+                    {!isHeroInputFocused && !query.trim() && (
+                      <div
+                        key={placeholderIndex}
+                        className="absolute left-0 top-0 w-full h-full flex items-center pointer-events-none animate-placeholderSlide"
+                      >
+                        <span className="text-base text-gray-800">
+                          {placeholderQuestions[placeholderIndex]}
+                        </span>
+                      </div>
+                    )}
+                  </div>
                   <button
                     onClick={handleSearch}
                     className={`p-1.5 sm:p-2 rounded-full transition-all hover:scale-105 ${
@@ -431,7 +445,7 @@ const AIAssistantPopup = () => {
                         : "bg-[#818cf8] hover:bg-[#6366f1]"
                     }`}
                   >
-                      <Send className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
+                    <Send className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
                   </button>
                 </div>
               </div>
@@ -760,6 +774,21 @@ const AIAssistantPopup = () => {
             transform: translate(-50%, -50%) scale(2.5);
             opacity: 0;
           }
+        }
+        
+        @keyframes placeholderSlide {
+          0% {
+            transform: translateY(4px);
+            opacity: 0;
+          }
+          100% {
+            transform: translateY(0);
+            opacity: 1;
+          }
+        }
+        
+        .animate-placeholderSlide {
+          animation: placeholderSlide 0.4s cubic-bezier(0.4, 0, 0.2, 1) forwards;
         }
       `}</style>
     </div>
