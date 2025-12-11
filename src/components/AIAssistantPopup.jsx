@@ -345,7 +345,7 @@ const AIAssistantPopup = () => {
               : "translate-y-full opacity-0 pointer-events-none"
           }`}
         >
-          <div className="w-full max-w-[700px] mx-auto">
+          <div className="w-full max-w-[656px] mx-auto">
             <div className="input-glow-container rounded-full">
               <div className="rounded-full h-12 flex items-center p-3 ">
                 <div className="flex items-center gap-2 sm:gap-3 w-full">
@@ -357,7 +357,7 @@ const AIAssistantPopup = () => {
                     onChange={(e) => setQuery(e.target.value)}
                     onKeyPress={(e) => e.key === "Enter" && handleSearch()}
                     placeholder="Ask us anything about Techjays"
-                    className="flex-1 text-sm sm:text-base text-gray-800 placeholder-gray-400 focus:outline-none bg-transparent"
+                    className="flex-1 text-base text-gray-800 placeholder:text-base placeholder-gray-400 focus:outline-none bg-transparent"
                   />
                   <button
                     onClick={handleSearch}
@@ -387,7 +387,7 @@ const AIAssistantPopup = () => {
         {!hasSearched && (
           <div
             ref={heroSentinelRef}
-            className="w-full max-w-[700px] h-1 pointer-events-none"
+            className="w-full max-w-[656px] h-1 pointer-events-none"
           />
         )}
 
@@ -396,7 +396,7 @@ const AIAssistantPopup = () => {
           <div
             ref={heroInputRef}
             style={{overflow: "visible", paddingBottom: "9px"}}
-            className={`w-full max-w-[700px] px-2 sm:px-0 transition-all duration-500 ease-out overflow-hidden ${
+            className={`w-full max-w-[656px] px-2 sm:px-0 transition-all duration-500 ease-out overflow-hidden ${
               isScrolled || animationStep >= 1
                 ? "opacity-0 scale-95 pointer-events-none max-h-0 mb-0"
                 : "opacity-100 scale-100 max-h-32"
@@ -412,7 +412,7 @@ const AIAssistantPopup = () => {
                     onChange={(e) => setQuery(e.target.value)}
                     onKeyPress={(e) => e.key === "Enter" && handleSearch()}
                     placeholder="Ask us anything about Techjays"
-                    className="flex-1 text-sm sm:text-base text-gray-800 placeholder-gray-400 focus:outline-none bg-transparent"
+                    className="flex-1 text-base text-gray-800 placeholder:text-base placeholder-gray-400 focus:outline-none bg-transparent"
                   />
                   <button
                     onClick={handleSearch}
@@ -457,7 +457,7 @@ const AIAssistantPopup = () => {
               opacity: 1,
             }}
           >
-            <div className="relative w-full max-w-[700px] mx-auto px-2 sm:px-4" style={{ marginBottom: '-16px' }}>
+            <div className="relative w-full max-w-[656px] mx-auto px-2 sm:px-4" style={{ marginBottom: '-16px' }}>
               <div
                 className={`relative w-full bg-white/95 backdrop-blur-xl rounded-t-3xl overflow-hidden border border-gray-200 flex flex-col pointer-events-auto animate-slideUp ${
                   minimized ? "cursor-pointer" : "cursor-default"
@@ -558,7 +558,7 @@ const AIAssistantPopup = () => {
                             </div>
                             <div className="flex-1 min-w-0">
                               <div className="bg-gradient-to-br from-[#f3f0ff] to-[#faf8ff] rounded-2xl rounded-tl-none p-3 shadow-sm border border-[#e9d5ff]/30">
-                                <p className="text-gray-700 text-sm sm:text-base leading-relaxed break-words">
+                                <p className="text-gray-656 text-sm sm:text-base leading-relaxed break-words">
                                   {message.text}
                                 </p>
                               </div>
@@ -598,7 +598,7 @@ const AIAssistantPopup = () => {
 
       {hasSearched && (
         <div className="fixed bottom-0 left-0 right-0 z-50 px-2 pb-2 sm:px-4 sm:pb-4 to-transparent">
-            <div className="w-full max-w-[700px] mx-auto">
+            <div className="w-full max-w-[656px] mx-auto">
             <div className="input-glow-container rounded-full">
               <div className="rounded-full h-12 flex items-center p-3 ">
                 <div className="flex items-center gap-2 sm:gap-3 w-full">
@@ -609,7 +609,7 @@ const AIAssistantPopup = () => {
                     onChange={(e) => setQuery(e.target.value)}
                     onKeyPress={(e) => e.key === "Enter" && handleSearch()}
                     placeholder="Ask us anything about Techjays"
-                    className="flex-1 text-sm sm:text-base text-gray-800 placeholder-gray-400 focus:outline-none bg-transparent"
+                    className="flex-1 text-base text-gray-800 placeholder:text-base placeholder-gray-400 focus:outline-none bg-transparent"
                   />
                   <button
                     onClick={handleSearch}
