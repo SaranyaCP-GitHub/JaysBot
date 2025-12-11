@@ -558,7 +558,7 @@ const AIAssistantPopup = () => {
                             </div>
                             <div className="flex-1 min-w-0">
                               <div className="bg-gradient-to-br from-[#f3f0ff] to-[#faf8ff] rounded-2xl rounded-tl-none p-3 shadow-sm border border-[#e9d5ff]/30">
-                                <p className="text-gray-656 text-sm sm:text-base leading-relaxed break-words">
+                                <p className="text-gray-800 text-sm sm:text-base leading-relaxed break-words">
                                   {message.text}
                                 </p>
                               </div>
