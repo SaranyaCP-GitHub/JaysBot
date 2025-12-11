@@ -375,8 +375,8 @@ const AIAssistantPopup = () => {
                     onClick={handleSearch}
                     className={`p-1.5 sm:p-2 rounded-full transition-all hover:scale-105 ${
                       query.trim() 
-                        ? "bg-[#818cf8] hover:bg-[#6366f1]" 
-                        : "bg-[#818cf8]/50 hover:bg-[#818cf8]/70 cursor-not-allowed"
+                        ? "bg-[#6366f1] hover:bg-[#4f46e5]" 
+                        : "bg-[#818cf8]/70 hover:bg-[#818cf8]/80 cursor-not-allowed"
                     }`}
                     disabled={!query.trim()}
                   >
@@ -414,11 +414,11 @@ const AIAssistantPopup = () => {
                 <div className="flex items-center gap-2 sm:gap-3 w-full relative">
                   <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-[#818cf8] flex-shrink-0" />
                   <div className="flex-1 relative">
-                    <input
-                      type="text"
-                      value={query}
-                      onChange={(e) => setQuery(e.target.value)}
-                      onKeyPress={(e) => e.key === "Enter" && handleSearch()}
+                  <input
+                    type="text"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    onKeyPress={(e) => e.key === "Enter" && handleSearch()}
                       onFocus={() => setIsHeroInputFocused(true)}
                       onBlur={() => setIsHeroInputFocused(false)}
                       placeholder={isHeroInputFocused ? "Ask us anything about Techjays" : ""}
@@ -439,13 +439,9 @@ const AIAssistantPopup = () => {
                   </div>
                   <button
                     onClick={handleSearch}
-                    className={`p-1.5 sm:p-2 rounded-full transition-all hover:scale-105 ${
-                      query.trim() 
-                        ? "bg-[#818cf8] hover:bg-[#6366f1]" 
-                        : "bg-[#818cf8] hover:bg-[#6366f1]"
-                    }`}
+                    className="p-1.5 sm:p-2 rounded-full transition-all hover:scale-105 bg-[#6366f1] hover:bg-[#4f46e5]"
                   >
-                    <Send className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
+                      <Send className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
                   </button>
                 </div>
               </div>
@@ -566,8 +562,8 @@ const AIAssistantPopup = () => {
                       <div key={index} className="animate-fadeIn">
                         {message.type === "user" ? (
                           <div className="flex items-start gap-2 sm:gap-3 justify-end">
-                            <div className="bg-gradient-to-r from-[#818cf8] to-[#6366f1] text-white rounded-2xl rounded-tr-none p-3 shadow-sm max-w-[85%] sm:max-w-[75%]">
-                              <p className="text-sm sm:text-base leading-relaxed">
+                            <div className="bg-gradient-to-r from-[#818cf8] to-[#6366f1] text-white rounded-2xl rounded-tr-none p-3 shadow-sm inline-block max-w-[85%] sm:max-w-[70%]">
+                              <p className="text-sm sm:text-base leading-relaxed whitespace-pre-wrap break-words">
                                 {message.text}
                               </p>
                             </div>
@@ -577,9 +573,9 @@ const AIAssistantPopup = () => {
                             <div className="flex-shrink-0 w-6 h-6 sm:w-8 sm:h-8 rounded-full bg-gradient-to-br from-[#a78bfa] to-[#818cf8] flex items-center justify-center shadow-sm">
                               <Sparkles className="w-3 h-3 sm:w-4 sm:h-4 text-white" />
                             </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="bg-gradient-to-br from-[#f3f0ff] to-[#faf8ff] rounded-2xl rounded-tl-none p-3 shadow-sm border border-[#e9d5ff]/30">
-                                <p className="text-gray-800 text-sm sm:text-base leading-relaxed break-words">
+                            <div className="flex-shrink-0 max-w-[85%] sm:max-w-[75%]">
+                              <div className="bg-gradient-to-br from-[#f3f0ff] to-[#faf8ff] rounded-2xl rounded-tl-none p-3 shadow-sm border border-[#e9d5ff]/30 inline-block">
+                                <p className="text-gray-800 text-sm sm:text-base leading-relaxed whitespace-pre-wrap break-words">
                                   {message.text}
                                 </p>
                               </div>
@@ -636,8 +632,8 @@ const AIAssistantPopup = () => {
                     onClick={handleSearch}
                     className={`p-1.5 sm:p-2 rounded-full transition-all hover:scale-105 ${
                       query.trim() 
-                        ? "bg-[#818cf8] hover:bg-[#6366f1]" 
-                        : "bg-[#818cf8]/50 hover:bg-[#818cf8]/70 cursor-not-allowed"
+                        ? "bg-[#6366f1] hover:bg-[#4f46e5]" 
+                        : "bg-[#818cf8]/70 hover:bg-[#818cf8]/80 cursor-not-allowed"
                     }`}
                     disabled={!query.trim()}
                   >
