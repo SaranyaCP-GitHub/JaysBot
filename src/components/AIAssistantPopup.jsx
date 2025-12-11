@@ -381,10 +381,10 @@ const AIAssistantPopup = () => {
                   />
                   <button
                     onClick={handleSearch}
-                    className={`p-1.5 sm:p-2 rounded-full transition-all hover:scale-105 ${
+                    className={`p-1.5 sm:p-2 rounded-full ${
                       query.trim()
-                        ? "bg-[#6366f1] hover:bg-[#4f46e5]"
-                        : "bg-[#818cf8] hover:bg-[#818cf8]/90 cursor-not-allowed opacity-90"
+                        ? "bg-[#6366f1] hover:bg-[#4f46e5] transition-all hover:scale-105"
+                        : "bg-[#818cf8] cursor-not-allowed"
                     }`}
                     disabled={!query.trim()}
                   >
@@ -645,10 +645,10 @@ const AIAssistantPopup = () => {
                   />
                   <button
                     onClick={handleSearch}
-                    className={`p-1.5 sm:p-2 rounded-full transition-all hover:scale-105 ${
+                    className={`p-1.5 sm:p-2 rounded-full ${
                       query.trim()
-                        ? "bg-[#6366f1] hover:bg-[#4f46e5]"
-                        : "bg-[#818cf8] hover:bg-[#818cf8]/90 cursor-not-allowed opacity-90"
+                        ? "bg-[#6366f1] hover:bg-[#4f46e5] transition-all hover:scale-105"
+                        : "bg-[#818cf8] cursor-not-allowed"
                     }`}
                     disabled={!query.trim()}
                   >
