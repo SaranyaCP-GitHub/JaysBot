@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useRef } from "react";
-import { Send, Mic, X, Sparkles, ChevronDown } from "lucide-react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import { Send, Mic, AudioLines, Sparkles, ChevronDown } from "lucide-react";
+import LiveVoiceMode from "./LiveVoiceMode";
 
 // Custom hook for responsive breakpoints
 const useResponsiveValues = () => {
@@ -114,6 +115,10 @@ const AIAssistantPopup = () => {
   const [isMicActive, setIsMicActive] = useState(false);
   const [placeholderIndex, setPlaceholderIndex] = useState(0);
   const [isHeroInputFocused, setIsHeroInputFocused] = useState(false);
+
+  // Live Voice Chat State
+  const [isLiveVoiceActive, setIsLiveVoiceActive] = useState(false);
+
   const chatContainerRef = useRef(null);
   const bottomInputRef = useRef(null);
   const heroInputRef = useRef(null);
@@ -231,6 +236,61 @@ const AIAssistantPopup = () => {
     setIsMicActive(!isMicActive);
     // TODO: Add actual microphone recording functionality here
   };
+
+  // Live Voice Chat Functions
+  const startLiveVoice = () => {
+    setIsLiveVoiceActive(true);
+  };
+
+  const closeLiveVoice = () => {
+    setIsLiveVoiceActive(false);
+  };
+
+  // Add message from voice to chat history
+  const addVoiceMessage = (message) => {
+    setChatHistory((prev) => {
+      // If it's an AI message and the last message is also an AI message (streaming update)
+      if (
+        message.type === "ai" &&
+        prev.length > 0 &&
+        prev[prev.length - 1].type === "ai"
+      ) {
+        // Update the last message instead of adding a new one (for streaming)
+        const updated = [...prev];
+        updated[updated.length - 1] = {
+          ...updated[updated.length - 1],
+          text: message.text,
+          isVoice: message.isVoice || updated[updated.length - 1].isVoice,
+          isStreaming: message.isStreaming !== false, // Default to true unless explicitly false
+        };
+        return updated;
+      }
+      // Otherwise, add as a new message
+      return [
+        ...prev,
+        { ...message, isStreaming: message.isStreaming !== false },
+      ];
+    });
+  };
+
+  // Show chat modal for voice conversation
+  const showChatForVoice = useCallback(() => {
+    // Prevent duplicate calls - if already searched, just minimize
+    if (hasSearched) {
+      setMinimized(false);
+      return;
+    }
+    setAnimationStep(1);
+    setTimeout(() => {
+      setAnimationStep(2);
+      setTimeout(() => {
+        setAnimationStep(3);
+        setShowLady(true);
+        setHasSearched(true);
+      }, 400);
+    }, 0);
+    setMinimized(false);
+  }, [hasSearched]);
 
   const handleSearch = async () => {
     // If query is empty, use the current placeholder text (only for hero input)
@@ -356,10 +416,30 @@ const AIAssistantPopup = () => {
 
   return (
     <div className="bg-transparent relative overflow-auto">
+      {/* LiveVoiceMode - rendered once, always present to prevent remounting */}
+      {isLiveVoiceActive && (
+        <div className="fixed bottom-0 left-0 right-0 z-[60] px-2 pb-2 sm:px-4 sm:pb-4">
+          <div className="w-full max-w-[656px] mx-auto">
+            <div className="input-glow-container rounded-full">
+              <div className="rounded-full h-12 flex items-center p-3">
+                <LiveVoiceMode
+                  key="live-voice-mode" // Stable key to prevent remounting
+                  isActive={isLiveVoiceActive}
+                  onClose={closeLiveVoice}
+                  onAddMessage={addVoiceMessage}
+                  onShowChat={showChatForVoice}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Bottom fixed input - slides in from bottom when scrolled or animation step 2+ */}
-      {!hasSearched && (
+      {/* Hide when voice is active to prevent duplicate UI */}
+      {!hasSearched && !isLiveVoiceActive && (
         <div
-          className={`fixed bottom-0 left-0 right-0 z-50 p-2  to-transparent transition-all duration-500 ease-out ${
+          className={`fixed bottom-0 left-0 right-0 z-50 p-2 to-transparent transition-all duration-500 ease-out ${
             isScrolled || animationStep >= 2
               ? "translate-y-0 opacity-100"
               : "translate-y-full opacity-0 pointer-events-none"
@@ -367,30 +447,42 @@ const AIAssistantPopup = () => {
         >
           <div className="w-full max-w-[656px] mx-auto">
             <div className="input-glow-container rounded-full">
-              <div className="rounded-full h-12 flex items-center p-3 ">
-                <div className="flex items-center gap-2 sm:gap-3 w-full">
-                  <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-[#818cf8] flex-shrink-0" />
-                  <input
-                    ref={bottomInputRef}
-                    type="text"
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    onKeyPress={(e) => e.key === "Enter" && handleSearch()}
-                    placeholder="Ask us anything about Techjays"
-                    className="flex-1 text-base text-gray-800 placeholder:text-base placeholder-gray-400 focus:outline-none bg-transparent"
-                  />
-                  <button
-                    onClick={handleSearch}
-                    className={`p-1.5 sm:p-2 rounded-full ${
-                      query.trim()
-                        ? "bg-[#6366f1] hover:bg-[#4f46e5] transition-all hover:scale-105"
-                        : "bg-[#818cf8] cursor-not-allowed"
-                    }`}
-                    disabled={!query.trim()}
-                  >
-                    <Send className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
-                  </button>
-                </div>
+              <div className="rounded-full h-12 flex items-center p-3">
+                {!isLiveVoiceActive && (
+                  <div className="flex items-center  w-full">
+                    <Sparkles className="mr-2 w-4 h-4 sm:w-5 sm:h-5 text-[#818cf8] flex-shrink-0" />
+                    <input
+                      ref={bottomInputRef}
+                      type="text"
+                      value={query}
+                      onChange={(e) => setQuery(e.target.value)}
+                      onKeyPress={(e) => e.key === "Enter" && handleSearch()}
+                      placeholder="Ask us anything about Techjays"
+                      className="flex-1 text-base text-gray-800 placeholder:text-base placeholder-gray-400 focus:outline-none bg-transparent"
+                    />
+                    <button
+                      onClick={startLiveVoice}
+                      className="ml-2 -mr-2 p-1.5 sm:p-2 rounded-full transition-all hover:scale-105 bg-[#818cf8]/20 hover:bg-[#818cf8]/30 border border-[#818cf8]/30"
+                      title="Start live voice chat"
+                    >
+                      <AudioLines
+                        className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#6366f1]"
+                        strokeWidth={2.7}
+                      />
+                    </button>
+                    <button
+                      onClick={handleSearch}
+                      className={`p-1.5 sm:p-2 rounded-full ${
+                        query.trim()
+                          ? "bg-[#6366f1] hover:bg-[#4f46e5] transition-all hover:scale-105"
+                          : "bg-[#818cf8] cursor-not-allowed"
+                      }`}
+                      disabled={!query.trim()}
+                    >
+                      <Send className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -412,15 +504,15 @@ const AIAssistantPopup = () => {
             ref={heroInputRef}
             style={{ overflow: "visible", paddingBottom: "9px" }}
             className={`w-full max-w-[656px] px-2 sm:px-0 transition-all duration-500 ease-out overflow-hidden ${
-              isScrolled || animationStep >= 1
+              isScrolled || animationStep >= 1 || isLiveVoiceActive
                 ? "opacity-0 scale-95 pointer-events-none max-h-0 mb-0"
                 : "opacity-100 scale-100 max-h-32"
             }`}
           >
             <div className="input-glow-container rounded-full">
-              <div className="rounded-full h-13 flex items-center p-3 ">
-                <div className="flex items-center gap-2 sm:gap-3 w-full relative">
-                  <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-[#818cf8] flex-shrink-0" />
+              <div className="rounded-full h-13 flex items-center p-3">
+                <div className="flex items-center  w-full relative">
+                  <Sparkles className="mr-2 w-4 h-4 sm:w-5 sm:h-5 text-[#818cf8] flex-shrink-0" />
                   <div className="flex-1 relative">
                     <input
                       type="text"
@@ -452,6 +544,16 @@ const AIAssistantPopup = () => {
                       </div>
                     )}
                   </div>
+                  <button
+                    onClick={startLiveVoice}
+                    className="ml-2 -mr-2 p-1.5 sm:p-2 rounded-full transition-all hover:scale-105 bg-[#818cf8]/20 hover:bg-[#818cf8]/30 border border-[#818cf8]/30"
+                    title="Start live voice chat"
+                  >
+                    <AudioLines
+                      className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#6366f1]"
+                      strokeWidth={2.7}
+                    />
+                  </button>
                   <button
                     onClick={handleSearch}
                     className="p-1.5 sm:p-2 rounded-full transition-all hover:scale-105 bg-[#6366f1] hover:bg-[#4f46e5]"
@@ -578,6 +680,12 @@ const AIAssistantPopup = () => {
                         {message.type === "user" ? (
                           <div className="flex items-start gap-2 sm:gap-3 justify-end">
                             <div className="bg-gradient-to-r from-[#818cf8] to-[#6366f1] text-white rounded-2xl rounded-tr-none p-3 shadow-sm inline-block max-w-[85%] sm:max-w-[70%]">
+                              {message.isVoice && (
+                                <div className="flex items-center gap-1 text-white/70 text-xs mb-1">
+                                  <Mic className="w-3 h-3" />
+                                  <span>Voice</span>
+                                </div>
+                              )}
                               <p className="text-sm sm:text-base leading-relaxed whitespace-pre-wrap break-words">
                                 {message.text}
                               </p>
@@ -590,6 +698,12 @@ const AIAssistantPopup = () => {
                             </div>
                             <div className="flex-shrink-0 max-w-[85%] sm:max-w-[75%]">
                               <div className="bg-gradient-to-br from-[#f3f0ff] to-[#faf8ff] rounded-2xl rounded-tl-none p-3 shadow-sm border border-[#e9d5ff]/30 inline-block">
+                                {message.isVoice && (
+                                  <div className="flex items-center gap-1 text-[#818cf8]/70 text-xs mb-1">
+                                    <AudioLines className="w-3 h-3" />
+                                    <span>Voice</span>
+                                  </div>
+                                )}
                                 <p className="text-gray-800 text-sm sm:text-base leading-relaxed whitespace-pre-wrap break-words">
                                   {message.text}
                                 </p>
@@ -628,13 +742,14 @@ const AIAssistantPopup = () => {
         </div>
       )}
 
-      {hasSearched && (
+      {/* Input container when hasSearched - hide when voice is active to prevent duplicate UI */}
+      {hasSearched && !isLiveVoiceActive && (
         <div className="fixed bottom-0 left-0 right-0 z-50 px-2 pb-2 sm:px-4 sm:pb-4 to-transparent">
           <div className="w-full max-w-[656px] mx-auto">
             <div className="input-glow-container rounded-full">
-              <div className="rounded-full h-12 flex items-center p-3 ">
-                <div className="flex items-center gap-2 sm:gap-3 w-full">
-                  <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-[#818cf8] flex-shrink-0" />
+              <div className="rounded-full h-12 flex items-center p-3">
+                <div className="flex items-center  w-full">
+                  <Sparkles className="mr-2 w-4 h-4 sm:w-5 sm:h-5 text-[#818cf8] flex-shrink-0" />
                   <input
                     type="text"
                     value={query}
@@ -642,7 +757,18 @@ const AIAssistantPopup = () => {
                     onKeyPress={(e) => e.key === "Enter" && handleSearch()}
                     placeholder="Ask us anything about Techjays"
                     className="flex-1 text-base text-gray-800 placeholder:text-base placeholder-gray-400 focus:outline-none bg-transparent"
+                    autoFocus={true}
                   />
+                  <button
+                    onClick={startLiveVoice}
+                    className="-mr-2 ml-2 p-1.5 sm:p-2 rounded-full transition-all hover:scale-105 bg-[#818cf8]/20 hover:bg-[#818cf8]/30 border border-[#818cf8]/30"
+                    title="Start live voice chat"
+                  >
+                    <AudioLines
+                      className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#6366f1]"
+                      strokeWidth={2.7}
+                    />
+                  </button>
                   <button
                     onClick={handleSearch}
                     className={`p-1.5 sm:p-2 rounded-full ${
