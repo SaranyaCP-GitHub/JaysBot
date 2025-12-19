@@ -2,6 +2,44 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Send, Mic, AudioLines, Sparkles, ChevronDown } from "lucide-react";
 import LiveVoiceMode from "./LiveVoiceMode";
 
+// Function to parse bold text in AI responses (supports **text** markdown syntax)
+const parseBoldText = (text) => {
+  if (!text) return null;
+
+  // Use regex to find all **text** patterns
+  const regex = /(\*\*[^*]+\*\*)/g;
+  const parts = [];
+  let lastIndex = 0;
+  let match;
+  let key = 0;
+
+  while ((match = regex.exec(text)) !== null) {
+    // Add text before the match
+    if (match.index > lastIndex) {
+      parts.push(
+        <span key={key++}>{text.substring(lastIndex, match.index)}</span>
+      );
+    }
+
+    // Add the bold text
+    const boldText = match[0].slice(2, -2); // Remove **
+    parts.push(
+      <strong key={key++} className="font-semibold text-gray-900">
+        {boldText}
+      </strong>
+    );
+
+    lastIndex = match.index + match[0].length;
+  }
+
+  // Add remaining text after last match
+  if (lastIndex < text.length) {
+    parts.push(<span key={key++}>{text.substring(lastIndex)}</span>);
+  }
+
+  return parts.length > 0 ? parts : text;
+};
+
 // Custom hook for responsive breakpoints
 const useResponsiveValues = () => {
   const [screenSize, setScreenSize] = useState("laptop");
@@ -462,12 +500,14 @@ const AIAssistantPopup = () => {
                     />
                     <button
                       onClick={startLiveVoice}
-                      className="ml-2 -mr-2 p-1.5 sm:p-2 rounded-full transition-all hover:scale-105 bg-[#818cf8]/20 hover:bg-[#818cf8]/30 border border-[#818cf8]/30"
+                      className="ml-2 -mr-2 -z-2 sm:p-2 rounded-full transition-all duration-300 ease-in-out hover:-translate-x-2 bg-[#818cf8]/20 hover:bg-[#818cf8]/30 border-1 border-[#6366f1]/30"
                       title="Start live voice chat"
                     >
                       <AudioLines
-                        className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#6366f1]"
-                        strokeWidth={2.7}
+                        className="sm:w-4 sm:h-4 text-[#6366f1]"
+                        strokeWidth={3}
+                        height={1}
+                        width={1}
                       />
                     </button>
                     <button
@@ -546,12 +586,14 @@ const AIAssistantPopup = () => {
                   </div>
                   <button
                     onClick={startLiveVoice}
-                    className="ml-2 -mr-2 p-1.5 sm:p-2 rounded-full transition-all hover:scale-105 bg-[#818cf8]/20 hover:bg-[#818cf8]/30 border border-[#818cf8]/30"
+                    className="ml-2 -mr-2 -z-2 sm:p-2 rounded-full transition-all duration-300 ease-in-out hover:-translate-x-2 bg-[#818cf8]/20 hover:bg-[#818cf8]/30 border-1 border-[#6366f1]/30"
                     title="Start live voice chat"
                   >
                     <AudioLines
-                      className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#6366f1]"
-                      strokeWidth={2.7}
+                      className="sm:w-4 sm:h-4 text-[#6366f1]"
+                      strokeWidth={3}
+                      height={1}
+                      width={1}
                     />
                   </button>
                   <button
@@ -705,7 +747,7 @@ const AIAssistantPopup = () => {
                                   </div>
                                 )}
                                 <p className="text-gray-800 text-sm sm:text-base leading-relaxed whitespace-pre-wrap break-words">
-                                  {message.text}
+                                  {parseBoldText(message.text)}
                                 </p>
                               </div>
                             </div>
@@ -761,12 +803,14 @@ const AIAssistantPopup = () => {
                   />
                   <button
                     onClick={startLiveVoice}
-                    className="-mr-2 ml-2 p-1.5 sm:p-2 rounded-full transition-all hover:scale-105 bg-[#818cf8]/20 hover:bg-[#818cf8]/30 border border-[#818cf8]/30"
+                    className="ml-2 -mr-2 -z-2 sm:p-2 rounded-full transition-all duration-300 ease-in-out hover:-translate-x-2 bg-[#818cf8]/20 hover:bg-[#818cf8]/30 border-1 border-[#6366f1]/30"
                     title="Start live voice chat"
                   >
                     <AudioLines
-                      className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#6366f1]"
-                      strokeWidth={2.7}
+                      className="sm:w-4 sm:h-4 text-[#6366f1]"
+                      strokeWidth={3}
+                      height={1}
+                      width={1}
                     />
                   </button>
                   <button

@@ -49,6 +49,12 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
   const updateVoiceStateRef = useRef(null); // Store latest updateVoiceState function
   const hasShownChatRef = useRef(false); // Track if chat has been shown to prevent duplicate calls
 
+  // Token management refs
+  const tokenRef = useRef(null); // Current authentication token
+  const expiresAtRef = useRef(null); // Token expiration timestamp
+  const tokenRefreshTimerRef = useRef(null); // Timer for token refresh
+  const isFetchingTokenRef = useRef(false); // Prevent multiple token fetches
+
   // Audio processing refs for noise reduction
   const highPassFilterRef = useRef(null);
   const lowPassFilterRef = useRef(null);
@@ -128,16 +134,14 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
   `;
 
   // Azure OpenAI Realtime API configuration
-  // Use import.meta.env for Vite - create .env file with VITE_AZURE_OPENAI_ENDPOINT and VITE_AZURE_OPENAI_API_KEY
   const AZURE_ENDPOINT = (
     import.meta.env.VITE_AZURE_OPENAI_ENDPOINT ||
     "saran-mj6uzvzg-eastus2.services.ai.azure.com"
   ).replace(/\/$/, "");
   const API_VERSION = "2025-10-01";
-  const MODEL = "gpt-4o-realtime-preview";
-  const API_KEY = import.meta.env.VITE_AZURE_OPENAI_API_KEY || "";
-  // WebSocket path - Azure AI Services uses voice-live/realtime
+  const MODEL = "gpt-4o-mini-realtime-preview";
   const WS_PATH = "voice-live/realtime";
+  const SPEECH_TOKEN_API = "https://chat-api.techjays.com/api/v1/speech-token/";
 
   // Helper to update voice state and ref together
   const updateVoiceState = useCallback((newState) => {
@@ -147,6 +151,87 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
       );
       voiceStateRef.current = newState;
       setVoiceState(newState);
+    }
+  }, []);
+
+  // Fetch speech token from API
+  const fetchSpeechToken = useCallback(async () => {
+    // Prevent multiple simultaneous token fetches
+    if (isFetchingTokenRef.current) {
+      console.log(
+        `[${instanceIdRef.current}] Token fetch already in progress, waiting...`
+      );
+      // Wait for existing fetch to complete
+      while (isFetchingTokenRef.current) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      return tokenRef.current ? { token: tokenRef.current } : null;
+    }
+
+    isFetchingTokenRef.current = true;
+    console.log(`[${instanceIdRef.current}] Fetching speech token from API`);
+
+    try {
+      const response = await fetch(SPEECH_TOKEN_API);
+      if (!response.ok) {
+        throw new Error(
+          `Failed to fetch token: ${response.status} ${response.statusText}`
+        );
+      }
+
+      const data = await response.json();
+      console.log(`[${instanceIdRef.current}] Token fetched successfully`);
+
+      // Store token data (API now only returns token)
+      tokenRef.current = data.token;
+      expiresAtRef.current = data.expiresAt ? new Date(data.expiresAt) : null;
+
+      // Calculate refresh time (60 minutes = 3600 seconds before expiration)
+      // If expiresIn is provided, use it; otherwise calculate from expiresAt
+      const expiresIn =
+        data.expiresIn ||
+        (data.expiresAt
+          ? Math.floor((new Date(data.expiresAt).getTime() - Date.now()) / 1000)
+          : 1200); // Default 20 minutes if not provided
+
+      // Refresh at 60 minutes (3600s) OR 2 minutes before expiration, whichever comes FIRST (smaller value)
+      const refreshIn = Math.min(3600, Math.max(0, expiresIn - 120));
+
+      console.log(
+        `[${instanceIdRef.current}] Token expires in ${expiresIn}s, will refresh in ${refreshIn}s`
+      );
+
+      // Clear existing refresh timer
+      if (tokenRefreshTimerRef.current) {
+        clearTimeout(tokenRefreshTimerRef.current);
+        tokenRefreshTimerRef.current = null;
+      }
+
+      // Schedule token refresh
+      tokenRefreshTimerRef.current = setTimeout(() => {
+        console.log(
+          `[${instanceIdRef.current}] Token refresh timer triggered, refreshing token...`
+        );
+        tokenRefreshTimerRef.current = null;
+
+        // Refresh token (but don't reconnect if WebSocket is open)
+        fetchSpeechToken().then((newTokenData) => {
+          if (newTokenData && wsRef.current?.readyState === WebSocket.OPEN) {
+            console.log(
+              `[${instanceIdRef.current}] Token refreshed, WebSocket still open - no reconnection needed`
+            );
+          }
+        });
+      }, refreshIn * 1000);
+
+      isFetchingTokenRef.current = false;
+      return {
+        token: data.token,
+      };
+    } catch (err) {
+      console.error(`[${instanceIdRef.current}] Failed to fetch token:`, err);
+      isFetchingTokenRef.current = false;
+      throw err;
     }
   }, []);
 
@@ -171,26 +256,25 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
       return;
     }
 
-    // Check if API key is configured
-    if (!API_KEY) {
-      setError(
-        "API key not configured. Add VITE_AZURE_OPENAI_API_KEY to .env file"
-      );
-      console.error("Missing VITE_AZURE_OPENAI_API_KEY environment variable");
-      return;
-    }
-
     isConnectingRef.current = true;
     console.log(`[${instanceIdRef.current}] Starting WebSocket connection`);
     updateVoiceState("connecting");
     setError(null);
 
     try {
-      // Build WebSocket URL with API key as query parameter
-      const wsUrl = `wss://${AZURE_ENDPOINT}/${WS_PATH}?api-version=${API_VERSION}&model=${MODEL}&api-key=${API_KEY}`;
+      // Fetch token first
+      const tokenData = await fetchSpeechToken();
+      if (!tokenData || !tokenData.token) {
+        throw new Error("Failed to obtain authentication token");
+      }
+
+      // Build WebSocket URL with token authorization
+      // Construct URL using endpoint and path, then add authorization
+      const wsUrl = `wss://${AZURE_ENDPOINT}/${WS_PATH}?api-version=${API_VERSION}&model=${MODEL}&authorization=Bearer ${tokenData.token}`;
+
       console.log(
         `[${instanceIdRef.current}] Connecting to:`,
-        wsUrl.replace(API_KEY, "***")
+        wsUrl.replace(tokenData.token, "***")
       );
 
       wsRef.current = new WebSocket(wsUrl);
@@ -286,13 +370,13 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
           // Provide more helpful error messages based on close code
           let errorMsg = "Connection closed unexpectedly.";
           if (event.code === 1006) {
-            errorMsg = "Connection failed. Check your API key and endpoint.";
+            errorMsg = "Connection failed. Please try again.";
           } else if (event.code === 1008) {
             errorMsg = "Policy violation. Check API configuration.";
           } else if (event.code === 1011) {
             errorMsg = "Server error. Please try again later.";
           } else if (event.code === 4001) {
-            errorMsg = "Authentication failed. Check your API key.";
+            errorMsg = "Authentication failed. Token may have expired.";
           } else if (event.code === 4003) {
             errorMsg = "Forbidden. Check your API permissions.";
           }
@@ -326,7 +410,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
       setError("Failed to connect. Please try again.");
       updateVoiceState("idle");
     }
-  }, [API_KEY, AZURE_ENDPOINT, API_VERSION, MODEL, WS_PATH, updateVoiceState]);
+  }, [fetchSpeechToken, updateVoiceState]);
 
   // Clear the input audio buffer on the server
   const clearInputAudioBuffer = useCallback(() => {
@@ -1122,6 +1206,13 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
         shouldCloseWebSocket
       );
 
+      // Clear token refresh timer
+      if (tokenRefreshTimerRef.current) {
+        clearTimeout(tokenRefreshTimerRef.current);
+        tokenRefreshTimerRef.current = null;
+        console.log(`[${instanceIdRef.current}] Token refresh timer cleared`);
+      }
+
       // Stop audio capture (handles media stream, audio nodes, and context)
       stopAudioCapture();
 
@@ -1157,6 +1248,13 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
       isProcessingResponseRef.current = false;
       isConnectingRef.current = false;
       canSendAudioRef.current = true;
+
+      // Clear token data if ending session
+      if (shouldCloseWebSocket) {
+        tokenRef.current = null;
+        expiresAtRef.current = null;
+        isFetchingTokenRef.current = false;
+      }
     },
     [stopAudioCapture]
   );
