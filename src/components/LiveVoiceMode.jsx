@@ -67,6 +67,10 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
   // Frequency data for realistic voice visualization (5 bars for different frequency bands)
   const [frequencyData, setFrequencyData] = useState([0, 0, 0, 0, 0]);
 
+  // RAG session key management
+  const [sessionKey, setSessionKey] = useState(null);
+  const sessionKeyRef = useRef(null);
+
   // AudioWorklet processor code - runs in separate thread for better performance
   const audioWorkletCode = `
     class AudioCaptureProcessor extends AudioWorkletProcessor {
@@ -146,21 +150,200 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
   // Helper to update voice state and ref together
   const updateVoiceState = useCallback((newState) => {
     if (voiceStateRef.current !== newState) {
-      console.log(
-        `[${instanceIdRef.current}] Voice state change: ${voiceStateRef.current} → ${newState}`
-      );
       voiceStateRef.current = newState;
       setVoiceState(newState);
     }
   }, []);
 
+  // Initialize session key from sessionStorage
+  useEffect(() => {
+    const existingKey = sessionStorage.getItem("session_key");
+    if (existingKey) {
+      setSessionKey(existingKey);
+      sessionKeyRef.current = existingKey;
+    }
+  }, []);
+
+  // Keep ref in sync with state
+  useEffect(() => {
+    sessionKeyRef.current = sessionKey;
+  }, [sessionKey]);
+
+  // Get or create RAG session key
+  const getOrCreateSessionKey = useCallback(async () => {
+    // Return existing session key if available
+    if (sessionKeyRef.current) {
+      return sessionKeyRef.current;
+    }
+
+    // Create new session key
+    try {
+      const response = await fetch(
+        "https://chat-api.techjays.com/api/v1/chat/",
+        {
+          method: "GET",
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error("Failed to retrieve session key");
+      }
+
+      const data = await response.json();
+
+      if (data.session_key) {
+        sessionStorage.setItem("session_key", data.session_key);
+        setSessionKey(data.session_key);
+        sessionKeyRef.current = data.session_key;
+        return data.session_key;
+      }
+
+      throw new Error("No session key in response");
+    } catch (error) {
+      console.error(
+        `[${instanceIdRef.current}] Error creating RAG session:`,
+        error
+      );
+      return null;
+    }
+  }, []);
+
+  // Execute function calls from the AI
+  const executeFunctionCall = useCallback(
+    async (callId, functionName, args) => {
+      try {
+        let result;
+
+        if (functionName === "search_techjays_knowledge") {
+          // Get or create session key
+          const currentSessionKey = await getOrCreateSessionKey();
+
+          if (!currentSessionKey) {
+            throw new Error("Failed to obtain session key");
+          }
+
+          // Call your RAG API
+          const response = await fetch(
+            "https://chat-api.techjays.com/api/v1/chat/",
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                session_key: currentSessionKey,
+                question: args.query,
+              }),
+            }
+          );
+
+          if (!response.ok) {
+            throw new Error("Failed to fetch from knowledge base");
+          }
+
+          const data = await response.json();
+
+          if (data.result && data.response && data.response.text) {
+            // Update session key if provided
+            if (data.session_key) {
+              sessionStorage.setItem("session_key", data.session_key);
+              setSessionKey(data.session_key);
+              sessionKeyRef.current = data.session_key;
+            }
+
+            let botMessage = data.response.text;
+
+            // Handle links if they exist
+            if (data.response.links && data.response.links.length > 0) {
+              const linkTexts = botMessage.split(", ");
+              let formattedLinks = "\n\nRelevant links:\n";
+              data.response.links.forEach((link, index) => {
+                const cleanedLink = link.replace(/<|>|\[|\]/g, "");
+                const linkText = linkTexts[index]
+                  ? linkTexts[index].trim()
+                  : `Link ${index + 1}`;
+                formattedLinks += `- ${linkText}: ${cleanedLink}\n`;
+              });
+              botMessage += formattedLinks;
+            }
+
+            // Clean up message formatting
+            botMessage = botMessage.replace(/<link>/g, "").replace(/, $/, "");
+            botMessage = botMessage.replace(/\s*\.:\s*/g, "");
+
+            result = {
+              success: true,
+              answer: botMessage,
+              sources: data.response.links || [],
+            };
+          } else {
+            throw new Error("Invalid response format from knowledge base");
+          }
+        } else {
+          result = {
+            success: false,
+            error: `Unknown function: ${functionName}`,
+          };
+        }
+
+        // Send function result back to the model
+        if (wsRef.current?.readyState === WebSocket.OPEN) {
+          wsRef.current.send(
+            JSON.stringify({
+              type: "conversation.item.create",
+              item: {
+                type: "function_call_output",
+                call_id: callId,
+                output: JSON.stringify(result),
+              },
+            })
+          );
+
+          // Trigger the model to respond with the function result
+          wsRef.current.send(
+            JSON.stringify({
+              type: "response.create",
+            })
+          );
+        }
+      } catch (error) {
+        console.error(
+          `[${instanceIdRef.current}] Function execution error:`,
+          error
+        );
+
+        // Send error back to model
+        if (wsRef.current?.readyState === WebSocket.OPEN) {
+          wsRef.current.send(
+            JSON.stringify({
+              type: "conversation.item.create",
+              item: {
+                type: "function_call_output",
+                call_id: callId,
+                output: JSON.stringify({
+                  success: false,
+                  error: error.message,
+                }),
+              },
+            })
+          );
+
+          // Still trigger a response so the model can tell the user about the error
+          wsRef.current.send(
+            JSON.stringify({
+              type: "response.create",
+            })
+          );
+        }
+      }
+    },
+    [getOrCreateSessionKey]
+  );
+
   // Fetch speech token from API
   const fetchSpeechToken = useCallback(async () => {
     // Prevent multiple simultaneous token fetches
     if (isFetchingTokenRef.current) {
-      console.log(
-        `[${instanceIdRef.current}] Token fetch already in progress, waiting...`
-      );
       // Wait for existing fetch to complete
       while (isFetchingTokenRef.current) {
         await new Promise((resolve) => setTimeout(resolve, 100));
@@ -169,7 +352,6 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
     }
 
     isFetchingTokenRef.current = true;
-    console.log(`[${instanceIdRef.current}] Fetching speech token from API`);
 
     try {
       const response = await fetch(SPEECH_TOKEN_API);
@@ -180,7 +362,6 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
       }
 
       const data = await response.json();
-      console.log(`[${instanceIdRef.current}] Token fetched successfully`);
 
       // Store token data (API now only returns token)
       tokenRef.current = data.token;
@@ -197,10 +378,6 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
       // Refresh at 60 minutes (3600s) OR 2 minutes before expiration, whichever comes FIRST (smaller value)
       const refreshIn = Math.min(3600, Math.max(0, expiresIn - 120));
 
-      console.log(
-        `[${instanceIdRef.current}] Token expires in ${expiresIn}s, will refresh in ${refreshIn}s`
-      );
-
       // Clear existing refresh timer
       if (tokenRefreshTimerRef.current) {
         clearTimeout(tokenRefreshTimerRef.current);
@@ -209,18 +386,11 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
 
       // Schedule token refresh
       tokenRefreshTimerRef.current = setTimeout(() => {
-        console.log(
-          `[${instanceIdRef.current}] Token refresh timer triggered, refreshing token...`
-        );
         tokenRefreshTimerRef.current = null;
 
         // Refresh token (but don't reconnect if WebSocket is open)
         fetchSpeechToken().then((newTokenData) => {
-          if (newTokenData && wsRef.current?.readyState === WebSocket.OPEN) {
-            console.log(
-              `[${instanceIdRef.current}] Token refreshed, WebSocket still open - no reconnection needed`
-            );
-          }
+          // Token refreshed
         });
       }, refreshIn * 1000);
 
@@ -243,21 +413,14 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
       wsRef.current?.readyState === WebSocket.OPEN ||
       wsRef.current?.readyState === WebSocket.CONNECTING
     ) {
-      console.log(
-        `[${instanceIdRef.current}] WebSocket already connected/connecting, skipping`
-      );
       return;
     }
     // Prevent multiple simultaneous connection attempts
     if (isConnectingRef.current) {
-      console.log(
-        `[${instanceIdRef.current}] Connection already in progress, skipping`
-      );
       return;
     }
 
     isConnectingRef.current = true;
-    console.log(`[${instanceIdRef.current}] Starting WebSocket connection`);
     updateVoiceState("connecting");
     setError(null);
 
@@ -272,26 +435,40 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
       // Construct URL using endpoint and path, then add authorization
       const wsUrl = `wss://${AZURE_ENDPOINT}/${WS_PATH}?api-version=${API_VERSION}&model=${MODEL}&authorization=Bearer ${tokenData.token}`;
 
-      console.log(
-        `[${instanceIdRef.current}] Connecting to:`,
-        wsUrl.replace(tokenData.token, "***")
-      );
-
       wsRef.current = new WebSocket(wsUrl);
       globalWebSocket = wsRef.current; // Store globally to survive remounts
 
       wsRef.current.onopen = () => {
-        console.log(`[${instanceIdRef.current}] WebSocket connected`);
         isConnectingRef.current = false;
         globalConnectionActive = true; // Mark as active globally
 
-        // Configure the session
+        // Configure the session with RAG tool
         const sessionConfig = {
           type: "session.update",
           session: {
             modalities: ["text", "audio"],
-            instructions:
-              "You are a helpful AI assistant for Techjays. Be concise and friendly. Answer questions about Techjays services, projects, and team.",
+            instructions: `You are Teja, The Jaysbot, a specialized AI assistant exclusively for Techjays company information. Your sole purpose is to help users learn about Techjays.
+            
+            **STRICT RULES:**
+            1. ONLY answer questions about Techjays - its services, projects, team, technologies, case studies, and company information
+            2. For ANY question not related to Techjays, politely redirect: "I'm specifically designed to help with Techjays information. Please ask me about Techjays services, projects, or team!"
+            3. ALWAYS use the search_techjays_knowledge function when users ask about Techjays
+            4. Do NOT answer general knowledge questions, news, weather, math problems, coding help, or any non-Techjays topics
+            5. If asked about competitors or other companies, redirect to Techjays: "I can tell you about Techjays' services instead. What would you like to know?"
+            
+            **Examples of what to DECLINE:**
+            - "What's the weather?" → "I'm here to help with Techjays information. Would you like to know about our services?"
+            - "What's the news in Tamil Nadu?" → "I focus exclusively on Techjays company information. How can I help you learn about Techjays?"
+            - "Solve this math problem" → "I specialize in Techjays information only. Ask me about our projects or team!"
+            - "Write me a poem" → "I'm designed specifically for Techjays inquiries. What would you like to know about our company?"
+            
+            **Examples of what to ACCEPT:**
+            - "What services does Techjays offer?" → Use search_techjays_knowledge
+            - "Tell me about your team" → Use search_techjays_knowledge
+            - "What technologies do you use?" → Use search_techjays_knowledge
+            - "Show me your projects" → Use search_techjays_knowledge
+            
+            Be friendly but firm. Always redirect off-topic questions back to Techjays. Keep responses concise and natural in voice format.`,
             voice: "ash",
             input_audio_format: "pcm16",
             output_audio_format: "pcm16",
@@ -304,6 +481,27 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
               prefix_padding_ms: 300,
               silence_duration_ms: 800, // Increased to better detect end of speech
             },
+            // Add the RAG tool
+            tools: [
+              {
+                type: "function",
+                name: "search_techjays_knowledge",
+                description:
+                  "Search the Techjays knowledge base for information about services, projects, team, capabilities, case studies, and company information. Use this whenever users ask about Techjays.",
+                parameters: {
+                  type: "object",
+                  properties: {
+                    query: {
+                      type: "string",
+                      description:
+                        "The user's question or search query about Techjays",
+                    },
+                  },
+                  required: ["query"],
+                },
+              },
+            ],
+            tool_choice: "auto", // Let the model decide when to use the tool
           },
         };
 
@@ -313,10 +511,6 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
         // Only start audio capture if not already capturing
         if (!isCapturingRef.current) {
           startAudioCapture();
-        } else {
-          console.log(
-            `[${instanceIdRef.current}] Audio already capturing, skipping`
-          );
         }
       };
 
@@ -324,18 +518,9 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
       wsRef.current.onmessage = (event) => {
         try {
           const message = JSON.parse(event.data);
-          console.log(
-            `[${instanceIdRef.current}] Received message:`,
-            message.type,
-            message
-          );
           // Call the latest handler via ref
           if (handleServerMessageRef.current) {
             handleServerMessageRef.current(message);
-          } else {
-            console.warn(
-              `[${instanceIdRef.current}] No message handler available`
-            );
           }
         } catch (err) {
           console.error(
@@ -354,14 +539,6 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
       };
 
       wsRef.current.onclose = (event) => {
-        console.log(
-          `[${instanceIdRef.current}] WebSocket closed - code:`,
-          event.code,
-          "reason:",
-          event.reason || "(no reason provided)",
-          "isActive:",
-          isActive
-        );
         isConnectingRef.current = false;
 
         // Only cleanup and show error if it's an unexpected closure
@@ -394,10 +571,6 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
           globalWebSocket = null;
         } else {
           // Normal closure (code 1000) - WebSocket was closed intentionally
-          // Don't cleanup here, just log it
-          console.log(
-            `[${instanceIdRef.current}] WebSocket closed normally (code 1000)`
-          );
           // Clear the ref and global tracker
           wsRef.current = null;
           globalConnectionActive = false;
@@ -415,7 +588,6 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
   // Clear the input audio buffer on the server
   const clearInputAudioBuffer = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
-      console.log("Clearing input audio buffer");
       wsRef.current.send(JSON.stringify({ type: "input_audio_buffer.clear" }));
     }
   }, []);
@@ -425,25 +597,16 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
     (message) => {
       switch (message.type) {
         case "session.created":
-          console.log(
-            `[${instanceIdRef.current}] Session created:`,
-            message.session?.id
-          );
           break;
 
         case "session.updated":
-          console.log(`[${instanceIdRef.current}] Session updated:`, message);
           break;
 
         case "input_audio_buffer.speech_started":
           // Ignore speech detection if we're currently processing a response
           if (isProcessingResponseRef.current) {
-            console.log(
-              `[${instanceIdRef.current}] Speech started IGNORED - AI is responding`
-            );
             return;
           }
-          console.log(`[${instanceIdRef.current}] Speech started`);
           updateVoiceState("listening");
           currentTranscriptRef.current = "";
           setTranscript("");
@@ -452,48 +615,26 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
         case "input_audio_buffer.speech_stopped":
           // Ignore if we're currently processing a response
           if (isProcessingResponseRef.current) {
-            console.log(
-              `[${instanceIdRef.current}] Speech stopped IGNORED - AI is responding`
-            );
             return;
           }
-          console.log(
-            `[${instanceIdRef.current}] Speech stopped - waiting for transcription`
-          );
           updateVoiceState("processing");
           break;
 
         case "input_audio_buffer.committed":
-          console.log("Audio buffer committed, item_id:", message.item_id);
           break;
 
         case "conversation.item.created":
           // Track conversation item to prevent duplicates
-          if (message.item?.id) {
-            console.log(
-              "Conversation item created:",
-              message.item.id,
-              "role:",
-              message.item?.role
-            );
-          }
           break;
 
         case "conversation.item.input_audio_transcription.completed":
           // User's speech transcription - check for duplicates
           const itemId = message.item_id;
           if (itemId && itemId === lastProcessedItemIdRef.current) {
-            console.log("Duplicate transcription IGNORED for item:", itemId);
             return;
           }
 
           if (message.transcript) {
-            console.log(
-              "Transcription completed:",
-              message.transcript,
-              "item:",
-              itemId
-            );
             lastProcessedItemIdRef.current = itemId;
             currentTranscriptRef.current = message.transcript;
             setTranscript(message.transcript);
@@ -519,26 +660,13 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
           if (newResponseId) {
             // Check if this is a duplicate response.created event
             if (newResponseId === currentResponseIdRef.current) {
-              console.log(
-                `[${instanceIdRef.current}] Duplicate response.created IGNORED:`,
-                newResponseId
-              );
               return;
             }
-            console.log(
-              `[${instanceIdRef.current}] Response created:`,
-              newResponseId,
-              "previous:",
-              currentResponseIdRef.current
-            );
             currentResponseIdRef.current = newResponseId;
             isProcessingResponseRef.current = true;
             canSendAudioRef.current = false; // Stop sending audio while AI responds
             // Set state to speaking immediately when AI starts responding
             updateVoiceState("speaking");
-            console.log(
-              `[${instanceIdRef.current}] State set to "speaking" - AI responding`
-            );
             // Clear any buffered audio to prevent echo processing
             clearInputAudioBuffer();
           }
@@ -575,40 +703,20 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
             deltaResponseId === lastProcessedResponseIdRef.current
           ) {
             // Already processed this response, ignore deltas
-            console.log(
-              `[${instanceIdRef.current}] Ignoring delta for already processed response:`,
-              deltaResponseId
-            );
           }
           break;
 
         case "response.audio_transcript.done":
           // AI response complete - only process if matches current response and not already processed
           const responseId = message.response_id || message.response?.id;
-          console.log(
-            `[${instanceIdRef.current}] AI transcript done, response_id:`,
-            responseId,
-            "current:",
-            currentResponseIdRef.current,
-            "lastProcessed:",
-            lastProcessedResponseIdRef.current
-          );
 
           // Check if this response was already processed
           if (responseId && responseId === lastProcessedResponseIdRef.current) {
-            console.log(
-              `[${instanceIdRef.current}] Duplicate AI response IGNORED:`,
-              responseId
-            );
             return;
           }
 
           // Only process if matches current response
           if (responseId && responseId !== currentResponseIdRef.current) {
-            console.log(
-              `[${instanceIdRef.current}] Mismatched response_id IGNORED:`,
-              responseId
-            );
             return;
           }
 
@@ -617,7 +725,6 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
             !currentAiResponseRef.current ||
             currentAiResponseRef.current.trim() === ""
           ) {
-            console.log(`[${instanceIdRef.current}] No response text to add`);
             currentAiResponseRef.current = "";
             return;
           }
@@ -635,10 +742,6 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
 
           // Final update to chat history (mark as not streaming)
           if (onAddMessage && responseText && responseText.trim() !== "") {
-            console.log(
-              `[${instanceIdRef.current}] Finalizing AI response in chat:`,
-              responseText.substring(0, 50)
-            );
             onAddMessage({
               type: "ai",
               text: responseText,
@@ -668,43 +771,58 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
 
         case "response.audio.done":
           // All audio chunks received from server - playback will finish naturally
-          const audioDoneResponseId =
-            message.response_id || message.response?.id;
-          console.log(
-            `[${instanceIdRef.current}] Audio done from server, response_id:`,
-            audioDoneResponseId,
-            "isPlaying:",
-            isPlayingRef.current,
-            "queue length:",
-            audioQueueRef.current.length
-          );
           // Note: We don't change state here - we wait for response.done and then wait for playback to finish
+          break;
+
+        case "response.function_call_arguments.delta":
+          // Function arguments streaming (optional - for showing progress)
+          // Optionally update UI to show "Searching knowledge base..."
+          if (message.name === "search_techjays_knowledge") {
+            updateVoiceState("processing");
+          }
+          break;
+
+        case "response.function_call_arguments.done":
+          // Complete function call received - execute it
+          const callId = message.call_id;
+          const functionName = message.name;
+
+          try {
+            const functionArgs = JSON.parse(message.arguments);
+
+            // Execute the function
+            executeFunctionCall(callId, functionName, functionArgs);
+          } catch (error) {
+            console.error(
+              `[${instanceIdRef.current}] Failed to parse function arguments:`,
+              error
+            );
+            // Send error back to model
+            if (wsRef.current?.readyState === WebSocket.OPEN) {
+              wsRef.current.send(
+                JSON.stringify({
+                  type: "conversation.item.create",
+                  item: {
+                    type: "function_call_output",
+                    call_id: callId,
+                    output: JSON.stringify({
+                      success: false,
+                      error: "Failed to parse function arguments",
+                    }),
+                  },
+                })
+              );
+            }
+          }
           break;
 
         case "response.done":
           // Response complete, wait for audio to finish before going back to listening
-          const doneResponseId = message.response?.id || message.response_id;
-          console.log(
-            `[${instanceIdRef.current}] Response done, response_id:`,
-            doneResponseId,
-            "current:",
-            currentResponseIdRef.current,
-            "lastProcessed:",
-            lastProcessedResponseIdRef.current,
-            "current state:",
-            voiceStateRef.current,
-            "isPlaying:",
-            isPlayingRef.current
-          );
-
           // Clear the input buffer to remove any echo that was captured
           clearInputAudioBuffer();
 
           // Wait for audio playback to finish before allowing new speech detection
           waitForAudioToFinish().then(() => {
-            console.log(
-              `[${instanceIdRef.current}] Audio playback finished, waiting 300ms before resuming listening`
-            );
             // Small delay after audio finishes to prevent echo/overlap
             setTimeout(() => {
               isProcessingResponseRef.current = false;
@@ -732,7 +850,13 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
           break;
       }
     },
-    [onAddMessage, onShowChat, updateVoiceState, clearInputAudioBuffer]
+    [
+      onAddMessage,
+      onShowChat,
+      updateVoiceState,
+      clearInputAudioBuffer,
+      executeFunctionCall,
+    ]
   );
 
   // Keep the ref updated with the latest handler
@@ -832,8 +956,6 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
 
   // Stop existing audio capture
   const stopAudioCapture = useCallback(() => {
-    console.log(`[${instanceIdRef.current}] Stopping audio capture`);
-
     // Cancel animation frame for audio level visualization
     if (animationFrameRef.current) {
       cancelAnimationFrame(animationFrameRef.current);
@@ -885,9 +1007,6 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
   const startAudioCapture = useCallback(async () => {
     // Prevent multiple audio captures
     if (isCapturingRef.current) {
-      console.log(
-        `[${instanceIdRef.current}] Audio capture already running, skipping`
-      );
       return;
     }
 
@@ -896,7 +1015,6 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
 
     isCapturingRef.current = true;
     canSendAudioRef.current = true;
-    console.log(`[${instanceIdRef.current}] Starting audio capture`);
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -948,14 +1066,6 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
           const base64Audio = arrayBufferToBase64(pcm16.buffer);
 
           audioChunkCount++;
-          if (audioChunkCount === 1) {
-            console.log(`[${instanceIdRef.current}] First audio chunk sent`);
-          }
-          if (audioChunkCount % 50 === 0) {
-            console.log(
-              `[${instanceIdRef.current}] Sent ${audioChunkCount} audio chunks`
-            );
-          }
 
           try {
             wsRef.current.send(
@@ -981,10 +1091,6 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
 
       // Start real-time frequency analysis animation
       startFrequencyAnalysis();
-
-      console.log(
-        `[${instanceIdRef.current}] Audio capture started successfully`
-      );
     } catch (err) {
       console.error(
         `[${instanceIdRef.current}] Failed to start audio capture:`,
@@ -1030,21 +1136,11 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
   // Wait for audio playback to finish
   const waitForAudioToFinish = () => {
     return new Promise((resolve) => {
-      console.log(
-        `[${instanceIdRef.current}] Starting wait for audio to finish, isPlaying:`,
-        isPlayingRef.current,
-        "queue length:",
-        audioQueueRef.current.length
-      );
-
       // If not playing and queue is empty, wait a bit then resolve
       if (!isPlayingRef.current && audioQueueRef.current.length === 0) {
         // Wait 200ms to ensure no new audio is coming
         setTimeout(() => {
           if (!isPlayingRef.current && audioQueueRef.current.length === 0) {
-            console.log(
-              `[${instanceIdRef.current}] Audio already finished, resolving immediately`
-            );
             resolve();
           }
         }, 200);
@@ -1059,28 +1155,12 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
         const isPlaying = isPlayingRef.current;
         const queueLength = audioQueueRef.current.length;
 
-        console.log(
-          `[${instanceIdRef.current}] Checking audio status - isPlaying:`,
-          isPlaying,
-          "queue:",
-          queueLength,
-          "consecutiveEmpty:",
-          consecutiveEmptyChecks
-        );
-
         // If not playing and queue is empty, increment counter
         if (!isPlaying && queueLength === 0) {
           consecutiveEmptyChecks++;
           // Only resolve after multiple consecutive checks to ensure audio is really done
           if (consecutiveEmptyChecks >= requiredEmptyChecks) {
             clearInterval(checkInterval);
-            console.log(
-              `[${
-                instanceIdRef.current
-              }] ✅ Audio playback confirmed finished after ${
-                consecutiveEmptyChecks * 100
-              }ms of no activity`
-            );
             resolve();
           }
         } else {
@@ -1092,12 +1172,6 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
       // Safety timeout - only as a last resort (10 minutes for very long responses)
       setTimeout(() => {
         clearInterval(checkInterval);
-        console.warn(
-          `[${instanceIdRef.current}] ⚠️ Audio wait timeout reached (10 minutes) - forcing resolve. isPlaying:`,
-          isPlayingRef.current,
-          "queue:",
-          audioQueueRef.current.length
-        );
         resolve();
       }, 600000); // 10 minutes - should be enough for any response
     });
@@ -1141,13 +1215,6 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
       voiceStateRef.current === "speaking" ||
       isProcessingResponseRef.current
     ) {
-      console.log(
-        `[${instanceIdRef.current}] Interrupting AI response, currentResponseId:`,
-        currentResponseIdRef.current,
-        "isProcessing:",
-        isProcessingResponseRef.current
-      );
-
       // Clear audio queue and stop playback
       audioQueueRef.current = [];
       isPlayingRef.current = false;
@@ -1157,10 +1224,6 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
         wsRef.current?.readyState === WebSocket.OPEN &&
         currentResponseIdRef.current
       ) {
-        console.log(
-          `[${instanceIdRef.current}] Sending cancel for response:`,
-          currentResponseIdRef.current
-        );
         // Send cancel response event with response ID if available
         wsRef.current.send(
           JSON.stringify({
@@ -1175,9 +1238,6 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
           })
         );
       } else {
-        console.log(
-          `[${instanceIdRef.current}] No active response to cancel, just clearing local state`
-        );
         // Clear input buffer even if no response to cancel
         if (wsRef.current?.readyState === WebSocket.OPEN) {
           wsRef.current.send(
@@ -1201,16 +1261,10 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
   // Cleanup resources
   const cleanup = useCallback(
     (shouldCloseWebSocket = true) => {
-      console.log(
-        `[${instanceIdRef.current}] Cleaning up resources, shouldCloseWebSocket:`,
-        shouldCloseWebSocket
-      );
-
       // Clear token refresh timer
       if (tokenRefreshTimerRef.current) {
         clearTimeout(tokenRefreshTimerRef.current);
         tokenRefreshTimerRef.current = null;
-        console.log(`[${instanceIdRef.current}] Token refresh timer cleared`);
       }
 
       // Stop audio capture (handles media stream, audio nodes, and context)
@@ -1219,7 +1273,6 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
       // Close WebSocket only if explicitly requested (when ending session)
       if (wsRef.current && shouldCloseWebSocket) {
         if (wsRef.current.readyState === WebSocket.OPEN) {
-          console.log(`[${instanceIdRef.current}] Closing WebSocket`);
           wsRef.current.close(1000, "Session ended");
         } else if (wsRef.current.readyState === WebSocket.CONNECTING) {
           // If still connecting, set up a handler to close it when it opens
@@ -1235,8 +1288,6 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
         // Clear global connection tracker
         globalConnectionActive = false;
         globalWebSocket = null;
-      } else if (wsRef.current && !shouldCloseWebSocket) {
-        console.log(`[${instanceIdRef.current}] Skipping WebSocket close`);
       }
 
       // Clear audio queue and reset flags
@@ -1261,7 +1312,6 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
 
   // End session
   const handleEndSession = () => {
-    console.log(`[${instanceIdRef.current}] Ending session`);
     cleanup(true); // Close WebSocket when ending session
     updateVoiceState("idle");
     setTranscript("");
@@ -1293,19 +1343,9 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
     // Capture isActive at effect time
     const currentIsActive = isActive;
 
-    console.log(
-      `[${instanceIdRef.current}] Session effect - isActive:`,
-      currentIsActive,
-      "hasStarted:",
-      hasStartedRef.current,
-      "wsState:",
-      wsRef.current?.readyState
-    );
-
     // If deactivating, cleanup and return
     if (!currentIsActive) {
       if (hasStartedRef.current) {
-        console.log(`[${instanceIdRef.current}] Deactivating - cleaning up`);
         if (cleanupRef.current) {
           cleanupRef.current(true);
         }
@@ -1318,17 +1358,11 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
     if (globalConnectionActive && globalWebSocket) {
       // Restore WebSocket reference if we lost it on remount
       if (!wsRef.current && globalWebSocket.readyState === WebSocket.OPEN) {
-        console.log(
-          `[${instanceIdRef.current}] 🔄 Restoring WebSocket reference from global (remount detected)`
-        );
         wsRef.current = globalWebSocket;
       }
 
       // If global WebSocket is OPEN, never reconnect
       if (globalWebSocket.readyState === WebSocket.OPEN) {
-        console.log(
-          `[${instanceIdRef.current}] ✅✅✅ Global connection OPEN - ABSOLUTELY NO RECONNECTION`
-        );
         wsRef.current = globalWebSocket;
         hasStartedRef.current = true;
         // Ensure voice state is listening if it's idle
@@ -1340,9 +1374,6 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
 
       // If global WebSocket is CONNECTING, wait
       if (globalWebSocket.readyState === WebSocket.CONNECTING) {
-        console.log(
-          `[${instanceIdRef.current}] ⏳ Global connection CONNECTING - NO ACTION (waiting)`
-        );
         wsRef.current = globalWebSocket;
         hasStartedRef.current = true;
         // Set state to connecting if idle
@@ -1356,9 +1387,6 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
     // CRITICAL CHECK: If WebSocket is already OPEN, do ABSOLUTELY NOTHING
     // This prevents any reconnection attempts during the session, even on remount
     if (wsRef.current?.readyState === WebSocket.OPEN) {
-      console.log(
-        `[${instanceIdRef.current}] ✅✅✅ Connection OPEN - ABSOLUTELY NO ACTION (connection persists)`
-      );
       hasStartedRef.current = true;
       // Ensure voice state is listening if it's idle
       if (voiceStateRef.current === "idle" && updateVoiceStateRef.current) {
@@ -1369,9 +1397,6 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
 
     // If connecting, wait - do nothing
     if (wsRef.current?.readyState === WebSocket.CONNECTING) {
-      console.log(
-        `[${instanceIdRef.current}] ⏳ Connection CONNECTING - NO ACTION (waiting)`
-      );
       hasStartedRef.current = true;
       // Set state to connecting if idle
       if (voiceStateRef.current === "idle" && updateVoiceStateRef.current) {
@@ -1383,9 +1408,6 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
     // CRITICAL: If audio is already capturing, we have an active session
     // Don't reconnect even if component remounted (audio capture indicates active session)
     if (isCapturingRef.current) {
-      console.log(
-        `[${instanceIdRef.current}] 🎤🎤🎤 Audio capturing - ACTIVE SESSION DETECTED - NO RECONNECTION`
-      );
       hasStartedRef.current = true;
       return;
     }
@@ -1393,22 +1415,15 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
     // If already marked as started, don't reconnect (even without WebSocket ref)
     // This prevents reconnection when component remounts
     if (hasStartedRef.current) {
-      console.log(
-        `[${instanceIdRef.current}] ⚠️ Already started - NO RECONNECTION`
-      );
       return;
     }
 
     // If WebSocket exists but is closed, and we're already started, don't reconnect
     if (hasStartedRef.current && wsRef.current) {
-      console.log(
-        `[${instanceIdRef.current}] ⚠️ Already started with existing WebSocket - NO RECONNECTION`
-      );
       return;
     }
 
     // Only connect if: active, not started, and WebSocket doesn't exist or is closed
-    console.log(`[${instanceIdRef.current}] 🚀 Initializing NEW connection`);
     hasStartedRef.current = true;
 
     // Set state to connecting immediately when starting new connection
@@ -1420,25 +1435,16 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
     // The ref is set by the useEffect below, which runs before this one
     if (connectWebSocketRef.current) {
       connectWebSocketRef.current();
-    } else {
-      console.error(`[${instanceIdRef.current}] connectWebSocketRef not set!`);
     }
 
     // Cleanup function - only runs when isActive changes to false
     return () => {
       // Only cleanup if we're actually deactivating
       if (!currentIsActive && hasStartedRef.current) {
-        console.log(`[${instanceIdRef.current}] 🛑 Cleanup: deactivating`);
         if (cleanupRef.current) {
           cleanupRef.current(true);
-        } else {
-          console.error(`[${instanceIdRef.current}] cleanupRef not set!`);
         }
         hasStartedRef.current = false;
-      } else {
-        console.log(
-          `[${instanceIdRef.current}] ⏸️ Cleanup skipped: still active`
-        );
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1470,7 +1476,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
       case "listening":
         return transcript ? `"${transcript}"` : "Listening...";
       case "processing":
-        return "Processing...";
+        return "Searching knowledge base..."; // Updated to be more specific
       case "speaking":
         return "Speaking...";
       default:
@@ -1485,13 +1491,6 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
         return "Ready";
     }
   };
-
-  console.log(
-    `[${instanceIdRef.current}] Rendering LiveVoiceMode, isActive:`,
-    isActive,
-    "voiceState:",
-    voiceState
-  );
 
   if (!isActive) return null;
 
