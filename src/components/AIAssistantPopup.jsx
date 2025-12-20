@@ -1,44 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Send, Mic, AudioLines, Sparkles, ChevronDown } from "lucide-react";
 import LiveVoiceMode from "./LiveVoiceMode";
-
-// Function to parse bold text in AI responses (supports **text** markdown syntax)
-const parseBoldText = (text) => {
-  if (!text) return null;
-
-  // Use regex to find all **text** patterns
-  const regex = /(\*\*[^*]+\*\*)/g;
-  const parts = [];
-  let lastIndex = 0;
-  let match;
-  let key = 0;
-
-  while ((match = regex.exec(text)) !== null) {
-    // Add text before the match
-    if (match.index > lastIndex) {
-      parts.push(
-        <span key={key++}>{text.substring(lastIndex, match.index)}</span>
-      );
-    }
-
-    // Add the bold text
-    const boldText = match[0].slice(2, -2); // Remove **
-    parts.push(
-      <strong key={key++} className="font-semibold text-gray-900">
-        {boldText}
-      </strong>
-    );
-
-    lastIndex = match.index + match[0].length;
-  }
-
-  // Add remaining text after last match
-  if (lastIndex < text.length) {
-    parts.push(<span key={key++}>{text.substring(lastIndex)}</span>);
-  }
-
-  return parts.length > 0 ? parts : text;
-};
+import SearchInput from "./searchInput/SearchInput";
+import IconButton from "../ui/atom/IconButton";
+import LoadingDots from "../ui/atom/LoadingDots";
+import { parseBoldText } from "../utils/textUtils";
 
 // Custom hook for responsive breakpoints
 const useResponsiveValues = () => {
@@ -487,41 +453,16 @@ const AIAssistantPopup = () => {
             <div className="input-glow-container rounded-full">
               <div className="rounded-full h-12 flex items-center p-3">
                 {!isLiveVoiceActive && (
-                  <div className="flex items-center  w-full">
-                    <Sparkles className="mr-2 w-4 h-4 sm:w-5 sm:h-5 text-[#818cf8] flex-shrink-0" />
-                    <input
-                      ref={bottomInputRef}
-                      type="text"
-                      value={query}
-                      onChange={(e) => setQuery(e.target.value)}
-                      onKeyPress={(e) => e.key === "Enter" && handleSearch()}
-                      placeholder="Ask us anything about Techjays"
-                      className="flex-1 text-base text-gray-800 placeholder:text-base placeholder-gray-400 focus:outline-none bg-transparent"
-                    />
-                    <button
-                      onClick={startLiveVoice}
-                      className="ml-2 -mr-2 -z-2 sm:p-2 rounded-full transition-all duration-300 ease-in-out hover:-translate-x-2 bg-[#818cf8]/20 hover:bg-[#818cf8]/30 border-1 border-[#6366f1]/30"
-                      title="Start live voice chat"
-                    >
-                      <AudioLines
-                        className="sm:w-4 sm:h-4 text-[#6366f1]"
-                        strokeWidth={3}
-                        height={1}
-                        width={1}
-                      />
-                    </button>
-                    <button
-                      onClick={handleSearch}
-                      className={`p-1.5 sm:p-2 rounded-full ${
-                        query.trim()
-                          ? "bg-[#6366f1] hover:bg-[#4f46e5] transition-all hover:scale-105"
-                          : "bg-[#818cf8] cursor-not-allowed"
-                      }`}
-                      disabled={!query.trim()}
-                    >
-                      <Send className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
-                    </button>
-                  </div>
+                  <SearchInput
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    onKeyPress={(e) => e.key === "Enter" && handleSearch()}
+                    onSearch={handleSearch}
+                    onVoiceStart={startLiveVoice}
+                    placeholder="Ask us anything about Techjays"
+                    inputRef={bottomInputRef}
+                    disableSendWhenEmpty={true}
+                  />
                 )}
               </div>
             </div>
@@ -551,58 +492,22 @@ const AIAssistantPopup = () => {
           >
             <div className="input-glow-container rounded-full">
               <div className="rounded-full h-13 flex items-center p-3">
-                <div className="flex items-center  w-full relative">
-                  <Sparkles className="mr-2 w-4 h-4 sm:w-5 sm:h-5 text-[#818cf8] flex-shrink-0" />
-                  <div className="flex-1 relative">
-                    <input
-                      type="text"
-                      value={query}
-                      onChange={(e) => setQuery(e.target.value)}
-                      onKeyPress={(e) => e.key === "Enter" && handleSearch()}
-                      onFocus={() => setIsHeroInputFocused(true)}
-                      onBlur={() => setIsHeroInputFocused(false)}
-                      placeholder={
-                        isHeroInputFocused
-                          ? "Ask us anything about Techjays"
-                          : ""
-                      }
-                      className={`w-full text-base text-gray-800 placeholder:text-base focus:outline-none bg-transparent ${
-                        isHeroInputFocused ? "placeholder-gray-400" : ""
-                      }`}
-                    />
-                    {!isHeroInputFocused && !query.trim() && (
-                      <div
-                        key={placeholderIndex}
-                        className="absolute left-0 top-0 w-full h-full flex items-center pointer-events-none animate-placeholderSlide bg-transparent"
-                      >
-                        <span
-                          className="text-gray-800"
-                          style={{ fontSize: "1rem", lineHeight: "19px" }}
-                        >
-                          {placeholderQuestions[placeholderIndex]}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                  <button
-                    onClick={startLiveVoice}
-                    className="ml-2 -mr-2 -z-2 sm:p-2 rounded-full transition-all duration-300 ease-in-out hover:-translate-x-2 bg-[#818cf8]/20 hover:bg-[#818cf8]/30 border-1 border-[#6366f1]/30"
-                    title="Start live voice chat"
-                  >
-                    <AudioLines
-                      className="sm:w-4 sm:h-4 text-[#6366f1]"
-                      strokeWidth={3}
-                      height={1}
-                      width={1}
-                    />
-                  </button>
-                  <button
-                    onClick={handleSearch}
-                    className="p-1.5 sm:p-2 rounded-full transition-all hover:scale-105 bg-[#6366f1] hover:bg-[#4f46e5]"
-                  >
-                    <Send className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
-                  </button>
-                </div>
+                <SearchInput
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  onKeyPress={(e) => e.key === "Enter" && handleSearch()}
+                  onSearch={handleSearch}
+                  onVoiceStart={startLiveVoice}
+                  placeholder="Ask us anything about Techjays"
+                  showAnimatedPlaceholder={true}
+                  animatedPlaceholderText={
+                    placeholderQuestions[placeholderIndex]
+                  }
+                  isInputFocused={isHeroInputFocused}
+                  onFocus={() => setIsHeroInputFocused(true)}
+                  onBlur={() => setIsHeroInputFocused(false)}
+                  containerClassName="relative"
+                />
               </div>
             </div>
           </div>
@@ -648,24 +553,16 @@ const AIAssistantPopup = () => {
                   }
                 }}
               >
-                <button
+                <IconButton
+                  icon={ChevronDown}
                   onClick={() => setMinimized(true)}
                   className={`flex self-end z-10 p-1.5 mr-3 mt-2 mb-2 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-all ${
                     minimized ? "opacity-0 pointer-events-none" : "opacity-100"
                   }`}
-                >
-                  <ChevronDown className="w-4 h-4" />
-                </button>
-
-                {/* <button
-                  onClick={() => setMinimized(true)}
-                  className={`absolute top-3 right-12 z-10 p-1.5 text-white/70 hover:text-white hover:bg-white/10 rounded-lg transition-all ${
-                    minimized ? "opacity-0 pointer-events-none" : "opacity-100"
-                  }`}
-                  title="Minimize"
-                >
-                  <ChevronDown className="w-4 h-4" />
-                </button> */}
+                  iconProps={{
+                    className: "w-4 h-4",
+                  }}
+                />
 
                 {minimized && (chatHistory.length > 0 || isTyping) && (
                   <div className="absolute top-2 left-3 right-3 flex items-center gap-3 text-gray-800 text-base overflow-hidden">
@@ -674,17 +571,7 @@ const AIAssistantPopup = () => {
                     </div>
                     <div className="flex-1 min-w-0">
                       {isTyping ? (
-                        <div className="flex items-center gap-1.5 ">
-                          <div className="w-1.5 h-1.5 bg-[#818cf8] rounded-full animate-bounce"></div>
-                          <div
-                            className="w-1.5 h-1.5 bg-[#818cf8] rounded-full animate-bounce"
-                            style={{ animationDelay: "0.2s" }}
-                          ></div>
-                          <div
-                            className="w-1.5 h-1.5 bg-[#818cf8] rounded-full animate-bounce"
-                            style={{ animationDelay: "0.4s" }}
-                          ></div>
-                        </div>
+                        <LoadingDots size="sm" color="#818cf8" />
                       ) : (
                         chatHistory[chatHistory.length - 1] &&
                         chatHistory[chatHistory.length - 1].type === "ai" && (
@@ -694,7 +581,6 @@ const AIAssistantPopup = () => {
                         )
                       )}
                     </div>
-                    {/* <ChevronDown className="w-4 h-4 text-gray-600 rotate-180 flex-shrink-0" /> */}
                   </div>
                 )}
 
@@ -762,17 +648,7 @@ const AIAssistantPopup = () => {
                           <Sparkles className="w-4 h-4 text-white" />
                         </div>
                         <div className="flex bg-gradient-to-br from-[#f3f0ff] to-[#faf8ff] rounded-2xl rounded-tl-none p-4 shadow-sm border border-[#e9d5ff]/30">
-                          <div className="flex gap-2 items-center">
-                            <div className="w-2 h-2 bg-[#818cf8] rounded-full animate-bounce"></div>
-                            <div
-                              className="w-2 h-2 bg-[#818cf8] rounded-full animate-bounce"
-                              style={{ animationDelay: "0.2s" }}
-                            ></div>
-                            <div
-                              className="w-2 h-2 bg-[#818cf8] rounded-full animate-bounce"
-                              style={{ animationDelay: "0.4s" }}
-                            ></div>
-                          </div>
+                          <LoadingDots size="md" color="#818cf8" />
                         </div>
                       </div>
                     )}
@@ -790,41 +666,16 @@ const AIAssistantPopup = () => {
           <div className="w-full max-w-[656px] mx-auto">
             <div className="input-glow-container rounded-full">
               <div className="rounded-full h-12 flex items-center p-3">
-                <div className="flex items-center  w-full">
-                  <Sparkles className="mr-2 w-4 h-4 sm:w-5 sm:h-5 text-[#818cf8] flex-shrink-0" />
-                  <input
-                    type="text"
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    onKeyPress={(e) => e.key === "Enter" && handleSearch()}
-                    placeholder="Ask us anything about Techjays"
-                    className="flex-1 text-base text-gray-800 placeholder:text-base placeholder-gray-400 focus:outline-none bg-transparent"
-                    autoFocus={true}
-                  />
-                  <button
-                    onClick={startLiveVoice}
-                    className="ml-2 -mr-2 -z-2 sm:p-2 rounded-full transition-all duration-300 ease-in-out hover:-translate-x-2 bg-[#818cf8]/20 hover:bg-[#818cf8]/30 border-1 border-[#6366f1]/30"
-                    title="Start live voice chat"
-                  >
-                    <AudioLines
-                      className="sm:w-4 sm:h-4 text-[#6366f1]"
-                      strokeWidth={3}
-                      height={1}
-                      width={1}
-                    />
-                  </button>
-                  <button
-                    onClick={handleSearch}
-                    className={`p-1.5 sm:p-2 rounded-full ${
-                      query.trim()
-                        ? "bg-[#6366f1] hover:bg-[#4f46e5] transition-all hover:scale-105"
-                        : "bg-[#818cf8] cursor-not-allowed"
-                    }`}
-                    disabled={!query.trim()}
-                  >
-                    <Send className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
-                  </button>
-                </div>
+                <SearchInput
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  onKeyPress={(e) => e.key === "Enter" && handleSearch()}
+                  onSearch={handleSearch}
+                  onVoiceStart={startLiveVoice}
+                  placeholder="Ask us anything about Techjays"
+                  autoFocus={true}
+                  disableSendWhenEmpty={true}
+                />
               </div>
             </div>
           </div>
