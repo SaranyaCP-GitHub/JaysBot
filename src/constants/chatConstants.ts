@@ -10,5 +10,4 @@ export const PLACEHOLDER_QUESTIONS = [
   "How can you help me with my project?",
   "How do I get in touch with your team?",
   "What is the best way to contact you?",
-  "Can you build a custom AI solution for my business?",
 ] as const;
