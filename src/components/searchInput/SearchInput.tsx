@@ -63,7 +63,7 @@ const SearchInput: React.FC<SearchInputProps> = ({
           onBlur={onBlur}
           placeholder={displayPlaceholder}
           autoFocus={autoFocus}
-          className={`w-full text-base text-gray-800 placeholder:text-base focus:outline-none bg-transparent ${
+          className={`w-full text-sm text-gray-800 placeholder:text-sm focus:outline-none bg-transparent ${
             showAnimatedPlaceholder && isInputFocused
               ? "placeholder-gray-400"
               : showAnimatedPlaceholder
@@ -74,8 +74,8 @@ const SearchInput: React.FC<SearchInputProps> = ({
         {showAnimatedPlaceholder && !isInputFocused && isQueryEmpty && (
           <div className="absolute left-0 top-0 w-full h-full flex items-center pointer-events-none animate-placeholderSlide bg-transparent">
             <span
-              className="text-gray-800"
-              style={{ fontSize: "1rem", lineHeight: "19px" }}
+              className="text-gray-800 sm:text-sm"
+              style={{ fontSize: "14px", lineHeight: "19px" }}
             >
               {animatedPlaceholderText}
             </span>
