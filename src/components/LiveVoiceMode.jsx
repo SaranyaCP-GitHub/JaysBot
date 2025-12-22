@@ -454,7 +454,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
         
         **CRITICAL TRANSCRIPTION CORRECTIONS:**
         Listen carefully and auto-correct these common voice misinterpretations:
-        - "Texas" / "Tech Jazz" / "Tech Jays" / "TechJS" / "Tech J S" → Techjays
+        - "Texas" / "Tech Jazz" / "Tech Jays" / "TechJS" / "Tech J S / Tekjays" → Techjays
         - "Philip Samuel" / "Philip Sam" → Philip Samuelraj  
         - "Jaso" / "Jesse" / "Jess" → Jesso Clarence
         - "Dharma Raj" / "Dharma" → Dharmaraj
@@ -464,7 +464,6 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
         **LEADERSHIP FACTS (MEMORIZE THESE):**
         - Philip Samuelraj = Founder & CEO (Chief Helper)
         - Jesso Clarence = CTO
-        - WARNING: Jake Dawson is a CLIENT (VidRivals CEO), NOT Techjays staff
         - Only reference Section 1.2 for internal leadership
         - Never confuse client testimonials with company team
         
@@ -534,7 +533,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
             input_audio_transcription: {
               model: "whisper-1",
               language: "en",
-              prompt: "Techjays, Philip Samuelraj, Jesso Clarence, Dharmaraj, Agentic AI, RAG, MLOps, ChromaDB, Palantir" // Vocabulary hints
+              prompt: "Techjays, Philip Samuelraj, Jesso Clarence, Dharmaraj, Agentic AI, RAG, MLOps, ChromaDB, Palantir, Techjays, Techjays" // Vocabulary hints
             },
             
             turn_detection: {
