@@ -1,140 +1,69 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
-import { Send, Mic, AudioLines, Sparkles, ChevronDown } from "lucide-react";
+import React, { useState, useEffect, useRef } from "react";
+import { Mic, AudioLines, Sparkles, ChevronDown } from "lucide-react";
 import LiveVoiceMode from "./LiveVoiceMode";
 import SearchInput from "./searchInput/SearchInput";
 import IconButton from "../ui/atom/IconButton";
 import LoadingDots from "../ui/atom/LoadingDots";
 import { parseBoldText } from "../utils/textUtils";
-
-// Custom hook for responsive breakpoints
-const useResponsiveValues = () => {
-  const [screenSize, setScreenSize] = useState("laptop");
-  const [viewport, setViewport] = useState({ width: 1024, height: 800 });
-
-  useEffect(() => {
-    const updateScreenSize = () => {
-      const width = window.innerWidth;
-      const height = window.innerHeight;
-
-      // Update viewport dimensions
-      setViewport({ width, height });
-
-      if (width < 640) {
-        setScreenSize("mobile");
-      } else if (width <= 800) {
-        setScreenSize("smallTablet");
-      } else if (width < 1024) {
-        setScreenSize("tablet");
-      } else if (width < 1280) {
-        setScreenSize("laptop");
-      } else if (width < 1440) {
-        setScreenSize("desktop");
-      } else if (width < 1635) {
-        setScreenSize("largeDesktop");
-      } else if (width < 1700) {
-        setScreenSize("xlargeDesktop");
-      } else if (width < 1800) {
-        setScreenSize("xxLargeDesktop");
-      } else if (width < 1925) {
-        setScreenSize("xxxLargeDesktop");
-      } else if (width < 2960) {
-        setScreenSize("designerDesktop");
-      } else {
-        setScreenSize("fourKDesktop");
-      }
-    };
-
-    updateScreenSize();
-    window.addEventListener("resize", updateScreenSize);
-    return () => window.removeEventListener("resize", updateScreenSize);
-  }, []);
-
-  const getModalStyles = (minimized) => {
-    const { width, height } = viewport;
-
-    // Simple breakpoint-based styles - easy to adjust manually
-    // Format: { bottom, minimizedHeight, expandedMaxHeight, chatMaxHeight }
-
-    let bottom, minimizedHeight, expandedMaxHeight, chatMaxHeight;
-
-    if (width < 640) {
-      // Mobile
-      bottom = "48px";
-      minimizedHeight = "56px";
-      expandedMaxHeight = "45vh";
-      chatMaxHeight = "38vh";
-    } else if (width < 768) {
-      // Small tablet
-      bottom = "52px";
-      minimizedHeight = "58px";
-      expandedMaxHeight = "50vh";
-      chatMaxHeight = "43vh";
-    } else if (width < 1024) {
-      // Tablet
-      bottom = "52px";
-      minimizedHeight = "60px";
-      expandedMaxHeight = "55vh";
-      chatMaxHeight = "48vh";
-    } else if (width < 1280) {
-      // Laptop
-      bottom = "52px";
-      minimizedHeight = "60px";
-      expandedMaxHeight = "60vh";
-      chatMaxHeight = "53vh";
-    } else if (width < 1536) {
-      // Desktop
-      bottom = "52px";
-      minimizedHeight = "60px";
-      expandedMaxHeight = "65vh";
-      chatMaxHeight = "58vh";
-    } else {
-      // Large desktop / 4K
-      bottom = "52px";
-      minimizedHeight = "60px";
-      expandedMaxHeight = "70vh";
-      chatMaxHeight = "63vh";
-    }
-
-    return {
-      bottom: bottom,
-      maxHeight: minimized ? minimizedHeight : expandedMaxHeight,
-      chatMaxHeight: chatMaxHeight,
-    };
-  };
-
-  return { screenSize, viewport, getModalStyles };
-};
+import useResponsiveValues from "../hooks/useResponsiveValues";
+import { getSessionKey } from "../services/sessionService";
+import useVoiceChat from "../hooks/useVoiceChat";
+import useChat from "../hooks/useChat";
+import { PLACEHOLDER_QUESTIONS } from "../constants/chatConstants";
 
 const AIAssistantPopup = () => {
   const [query, setQuery] = useState("");
   const [showLady, setShowLady] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
-  const [response, setResponse] = useState("");
   const [chatHistory, setChatHistory] = useState([]);
   const [minimized, setMinimized] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
   const [animationStep, setAnimationStep] = useState(0); // 0: initial, 1: hero fading, 2: bottom showing, 3: modal showing
   const [sessionKey, setSessionKey] = useState(null);
-  const [isMicActive, setIsMicActive] = useState(false);
   const [placeholderIndex, setPlaceholderIndex] = useState(0);
   const [isHeroInputFocused, setIsHeroInputFocused] = useState(false);
-
-  // Live Voice Chat State
-  const [isLiveVoiceActive, setIsLiveVoiceActive] = useState(false);
 
   const chatContainerRef = useRef(null);
   const bottomInputRef = useRef(null);
   const heroInputRef = useRef(null);
   const heroSentinelRef = useRef(null);
-  const { screenSize, getModalStyles } = useResponsiveValues();
+  const { getModalStyles } = useResponsiveValues();
   const modalStyles = getModalStyles(minimized);
 
-  const placeholderQuestions = [
-    "What does Techjays do?",
-    "How can you help me with my project?",
-    "How do I get in touch with your team?",
-  ];
+  // Use voice chat hook
+  const {
+    isLiveVoiceActive,
+    startLiveVoice,
+    closeLiveVoice,
+    addVoiceMessage,
+    showChatForVoice,
+  } = useVoiceChat({
+    setChatHistory,
+    hasSearched,
+    setMinimized,
+    setAnimationStep,
+    setShowLady,
+    setHasSearched,
+  });
+
+  // Use chat hook
+  const { handleSearch } = useChat({
+    query,
+    setQuery,
+    hasSearched,
+    placeholderQuestions: PLACEHOLDER_QUESTIONS,
+    placeholderIndex,
+    sessionKey,
+    setSessionKey,
+    setChatHistory,
+    setIsTyping,
+    setAnimationStep,
+    setShowLady,
+    setHasSearched,
+    setIsScrolled,
+    setMinimized,
+  });
 
   // Use Intersection Observer to detect when hero input leaves viewport
   useEffect(() => {
@@ -185,42 +114,15 @@ const AIAssistantPopup = () => {
     };
   }, [showLady, minimized]);
 
-  // Get or initialize session key
-  const getSessionKey = async () => {
-    // Check sessionStorage first
-    let storedSessionKey = sessionStorage.getItem("session_key");
-    if (storedSessionKey) {
-      setSessionKey(storedSessionKey);
-      return storedSessionKey;
-    }
-
-    // If no session key, fetch one
-    try {
-      const response = await fetch(
-        "https://chat-api.techjays.com/api/v1/chat/",
-        {
-          method: "GET",
-        }
-      );
-      if (!response.ok) {
-        throw new Error("Failed to retrieve session key");
-      }
-      const data = await response.json();
-      if (data.session_key) {
-        sessionStorage.setItem("session_key", data.session_key);
-        setSessionKey(data.session_key);
-        return data.session_key;
-      }
-      return null;
-    } catch (error) {
-      console.error("Error fetching session key:", error);
-      return null;
-    }
-  };
-
   // Initialize session key on component mount
   useEffect(() => {
-    getSessionKey();
+    const initializeSessionKey = async () => {
+      const key = await getSessionKey();
+      if (key) {
+        setSessionKey(key);
+      }
+    };
+    initializeSessionKey();
   }, []);
 
   // Rotate placeholder text every 4 seconds (only for hero input, pause when focused)
@@ -229,194 +131,12 @@ const AIAssistantPopup = () => {
 
     const interval = setInterval(() => {
       setPlaceholderIndex(
-        (prevIndex) => (prevIndex + 1) % placeholderQuestions.length
+        (prevIndex) => (prevIndex + 1) % PLACEHOLDER_QUESTIONS.length
       );
     }, 4000);
 
     return () => clearInterval(interval);
-  }, [hasSearched, isHeroInputFocused, placeholderQuestions.length]);
-
-  const handleMicToggle = () => {
-    setIsMicActive(!isMicActive);
-    // TODO: Add actual microphone recording functionality here
-  };
-
-  // Live Voice Chat Functions
-  const startLiveVoice = () => {
-    setIsLiveVoiceActive(true);
-  };
-
-  const closeLiveVoice = () => {
-    setIsLiveVoiceActive(false);
-  };
-
-  // Add message from voice to chat history
-  const addVoiceMessage = (message) => {
-    setChatHistory((prev) => {
-      // If it's an AI message and the last message is also an AI message (streaming update)
-      if (
-        message.type === "ai" &&
-        prev.length > 0 &&
-        prev[prev.length - 1].type === "ai"
-      ) {
-        // Update the last message instead of adding a new one (for streaming)
-        const updated = [...prev];
-        updated[updated.length - 1] = {
-          ...updated[updated.length - 1],
-          text: message.text,
-          isVoice: message.isVoice || updated[updated.length - 1].isVoice,
-          isStreaming: message.isStreaming !== false, // Default to true unless explicitly false
-        };
-        return updated;
-      }
-      // Otherwise, add as a new message
-      return [
-        ...prev,
-        { ...message, isStreaming: message.isStreaming !== false },
-      ];
-    });
-  };
-
-  // Show chat modal for voice conversation
-  const showChatForVoice = useCallback(() => {
-    // Prevent duplicate calls - if already searched, just minimize
-    if (hasSearched) {
-      setMinimized(false);
-      return;
-    }
-    setAnimationStep(1);
-    setTimeout(() => {
-      setAnimationStep(2);
-      setTimeout(() => {
-        setAnimationStep(3);
-        setShowLady(true);
-        setHasSearched(true);
-      }, 400);
-    }, 0);
-    setMinimized(false);
-  }, [hasSearched]);
-
-  const handleSearch = async () => {
-    // If query is empty, use the current placeholder text (only for hero input)
-    let userMessage = query.trim();
-    if (!userMessage && !hasSearched) {
-      userMessage = placeholderQuestions[placeholderIndex];
-    }
-
-    if (!userMessage) {
-      return;
-    }
-
-    // Get or initialize session key
-    const currentSessionKey = await getSessionKey();
-    if (!currentSessionKey) {
-      const errorMessage =
-        "Sorry, I'm having trouble connecting. Please try again.";
-      setChatHistory((prev) => [...prev, { type: "user", text: userMessage }]);
-      setChatHistory((prev) => [...prev, { type: "ai", text: errorMessage }]);
-      return;
-    }
-
-    // Step 1: Fade out hero section textbox (only on first search)
-    if (!hasSearched) {
-      setAnimationStep(1);
-    }
-
-    // Add user message to chat history
-    setChatHistory((prev) => [...prev, { type: "user", text: userMessage }]);
-    setIsTyping(true);
-    setResponse("");
-    setQuery("");
-
-    // Show modal on first search
-    if (!hasSearched) {
-      setTimeout(() => {
-        setAnimationStep(2);
-        setTimeout(() => {
-          setAnimationStep(3);
-          setShowLady(true);
-          setHasSearched(true);
-        }, 400);
-      }, 0);
-    }
-
-    setIsScrolled(false);
-    setMinimized(false);
-
-    try {
-      // Call the chat API
-      const response = await fetch(
-        "https://chat-api.techjays.com/api/v1/chat/",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            session_key: currentSessionKey,
-            question: userMessage,
-          }),
-        }
-      );
-
-      if (!response.ok) {
-        throw new Error("Failed to fetch bot response");
-      }
-
-      const data = await response.json();
-
-      if (data.result && data.response && data.response.text) {
-        // Update session key if provided
-        if (data.session_key) {
-          sessionStorage.setItem("session_key", data.session_key);
-          setSessionKey(data.session_key);
-        }
-
-        let botMessage = data.response.text;
-
-        // Handle links if they exist (similar to chat.js logic)
-        if (data.response.links && data.response.links.length > 0) {
-          const linkTexts = botMessage.split(", ");
-          let formattedLinks = "";
-          data.response.links.forEach((link, index) => {
-            const cleanedLink = link.replace(/<|>|\[|\]/g, "");
-            const linkText = linkTexts[index] ? linkTexts[index].trim() : "";
-            formattedLinks += `${linkText}: ${cleanedLink}`;
-            if (index !== data.response.links.length - 1) {
-              formattedLinks += " ";
-            }
-          });
-          botMessage = formattedLinks;
-        }
-
-        // Clean up message formatting
-        botMessage = botMessage.replace(/<link>/g, "").replace(/, $/, "");
-        botMessage = botMessage.replace(/\s*\.:\s*/g, "");
-
-        setResponse(botMessage);
-        setChatHistory((prev) => [...prev, { type: "ai", text: botMessage }]);
-      } else {
-        throw new Error("Invalid bot response format");
-      }
-    } catch (error) {
-      console.error("Error sending user message:", error);
-      const errorMessage = "Sorry, I encountered an error. Please try again.";
-      setChatHistory((prev) => [...prev, { type: "ai", text: errorMessage }]);
-    } finally {
-      setIsTyping(false);
-    }
-  };
-
-  const handleClose = () => {
-    setShowLady(false);
-    setQuery("");
-    setResponse("");
-    setChatHistory([]);
-    setMinimized(false);
-    setHasSearched(false);
-    setAnimationStep(0);
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  };
+  }, [hasSearched, isHeroInputFocused]);
 
   return (
     <div className="bg-transparent relative overflow-auto">
@@ -501,7 +221,7 @@ const AIAssistantPopup = () => {
                   placeholder="Ask us anything about Techjays"
                   showAnimatedPlaceholder={true}
                   animatedPlaceholderText={
-                    placeholderQuestions[placeholderIndex]
+                    PLACEHOLDER_QUESTIONS[placeholderIndex]
                   }
                   isInputFocused={isHeroInputFocused}
                   onFocus={() => setIsHeroInputFocused(true)}
@@ -522,7 +242,7 @@ const AIAssistantPopup = () => {
               onClick={() => setMinimized(true)}
               onWheel={(e) => e.preventDefault()}
               onTouchMove={(e) => e.preventDefault()}
-            ></div>
+            />
           )}
           <div
             className={`fixed left-1 right-1 z-[50] transition-all duration-300 ease-out pointer-events-none overflow-hidden ${
@@ -567,7 +287,13 @@ const AIAssistantPopup = () => {
                 {minimized && (chatHistory.length > 0 || isTyping) && (
                   <div className="absolute top-2 left-3 right-3 flex items-center gap-3 text-gray-800 text-base overflow-hidden">
                     <div className="flex-shrink-0 w-6 h-6 rounded-full bg-gradient-to-br from-[#a78bfa] to-[#818cf8] flex items-center justify-center">
-                      <Sparkles className="w-3 h-3 text-white" />
+                      {chatHistory[chatHistory.length - 1] &&
+                      chatHistory[chatHistory.length - 1].type === "ai" &&
+                      chatHistory[chatHistory.length - 1].isVoice ? (
+                        <AudioLines className="w-3 h-3 text-white" />
+                      ) : (
+                        <Sparkles className="w-3 h-3 text-white" />
+                      )}
                     </div>
                     <div className="flex-1 min-w-0">
                       {isTyping ? (
@@ -608,32 +334,48 @@ const AIAssistantPopup = () => {
                         {message.type === "user" ? (
                           <div className="flex items-start gap-2 sm:gap-3 justify-end">
                             <div className="bg-gradient-to-r from-[#818cf8] to-[#6366f1] text-white rounded-2xl rounded-tr-none p-3 shadow-sm inline-block max-w-[85%] sm:max-w-[70%]">
-                              {message.isVoice && (
-                                <div className="flex items-center gap-1 text-white/70 text-xs mb-1">
-                                  <Mic className="w-3 h-3" />
-                                  <span>Voice</span>
-                                </div>
+                              {message.isVoice ? (
+                                <p className="text-sm sm:text-base leading-relaxed whitespace-pre-wrap break-words italic font-semibold">
+                                  {message.text}
+                                </p>
+                              ) : (
+                                <p className="text-sm sm:text-base leading-relaxed whitespace-pre-wrap break-words">
+                                  {message.text}
+                                </p>
                               )}
-                              <p className="text-sm sm:text-base leading-relaxed whitespace-pre-wrap break-words">
-                                {message.text}
-                              </p>
                             </div>
+                            {/* {message.isVoice && (
+                              <div className="relative">
+                                <div className="absolute -top-3 right-2 ">
+                                  <Mic
+                                    className="w-6 h-6 bg-gray-100 shadow-lg rounded-full p-1"
+                                    color="#818cf8"
+                                    strokeWidth={2.5}
+                                  />
+                                </div>
+                              </div>
+                            )} */}
                           </div>
                         ) : (
                           <div className="flex gap-2 sm:gap-3 ">
                             <div className="flex-shrink-0 w-6 h-6 sm:w-8 sm:h-8 rounded-full bg-gradient-to-br from-[#a78bfa] to-[#818cf8] flex items-center justify-center shadow-sm mt-3">
-                              <Sparkles className="w-3 h-3 sm:w-4 sm:h-4 text-white" />
+                              {message.isVoice ? (
+                                <AudioLines className="w-3 h-3 sm:w-4 sm:h-4 text-white" />
+                              ) : (
+                                <Sparkles className="w-3 h-3 sm:w-4 sm:h-4 text-white" />
+                              )}
                             </div>
                             <div className="flex-shrink-0 max-w-[85%] sm:max-w-[75%]">
                               <div className="bg-gradient-to-br from-[#f3f0ff] to-[#faf8ff] rounded-2xl rounded-tl-none p-3 shadow-sm border border-[#e9d5ff]/30 inline-block">
-                                {message.isVoice && (
+                                {/* {message.isVoice && (
                                   <div className="flex items-center gap-1 text-[#818cf8]/70 text-xs mb-1">
                                     <AudioLines className="w-3 h-3" />
-                                    <span>Voice</span>
                                   </div>
-                                )}
+                                )} */}
                                 <p className="text-gray-800 text-sm sm:text-base leading-relaxed whitespace-pre-wrap break-words">
-                                  {parseBoldText(message.text)}
+                                  {message.isVoice
+                                    ? parseBoldText(message.text)
+                                    : parseBoldText(message.text)}
                                 </p>
                               </div>
                             </div>

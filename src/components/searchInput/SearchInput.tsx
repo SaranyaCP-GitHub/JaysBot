@@ -85,7 +85,8 @@ const SearchInput: React.FC<SearchInputProps> = ({
       <IconButton
         icon={AudioLines}
         onClick={onVoiceStart}
-        className="ml-2 -mr-2 -z-2 sm:p-2 rounded-full transition-all duration-300 ease-in-out hover:-translate-x-2 bg-[#818cf8]/20 hover:bg-[#818cf8]/30 border-1 border-[#6366f1]/30"
+        className="ml-1.5 mr-1 p-1.5 sm:p-2 rounded-full transition-all duration-300 ease-in-out bg-[#818cf8]/20 hover:bg-[#818cf8]/30 border-2 border-[#6366f1]/30"
+        // className="ml-2 mr-2 sm:-mr-2 -z-2 sm:p-2 rounded-full transition-all duration-300 ease-in-out bg-[#818cf8]/20 hover:-translate-x-2 hover:bg-[#818cf8]/30 border-1 border-[#6366f1]/30" // Animation commented out
         title="Start live voice chat"
         iconProps={{
           className: "w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#6366f1]",
