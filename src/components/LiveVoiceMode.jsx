@@ -48,6 +48,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
   const cleanupRef = useRef(null); // Store latest cleanup function
   const updateVoiceStateRef = useRef(null); // Store latest updateVoiceState function
   const hasShownChatRef = useRef(false); // Track if chat has been shown to prevent duplicate calls
+  const isResponseDoneRef = useRef(false); // Track if response is already done (to prevent canceling completed responses)
 
   // Token management refs
   const tokenRef = useRef(null); // Current authentication token
@@ -535,14 +536,15 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
             voice: "ash",
             input_audio_format: "pcm16",
             output_audio_format: "pcm16",
-            
+
             // ⭐ IMPROVED TRANSCRIPTION CONFIG
             input_audio_transcription: {
               model: "whisper-1",
               language: "en",
-              prompt: "Techjays, Philip Samuelraj, Jesso Clarence, Dharmaraj, Agentic AI, RAG, MLOps, ChromaDB, Palantir, Techjays, Techjays"
+              prompt:
+                "Techjays, Philip Samuelraj, Jesso Clarence, Dharmaraj, Agentic AI, RAG, MLOps, ChromaDB, Palantir, Techjays, Techjays",
             },
-            
+
             turn_detection: {
               type: "server_vad",
               threshold: 0.5,
@@ -578,13 +580,13 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
           hasShownChatRef.current = true;
           onShowChat();
         }
-        
+
         // ⭐ ADD WELCOME MESSAGE
         // Small delay to ensure session configuration is processed
         setTimeout(() => {
           if (wsRef.current?.readyState === WebSocket.OPEN) {
-            console.log('🎉 Triggering welcome message...');
-            
+            console.log("🎉 Triggering welcome message...");
+
             // Send greeting trigger
             wsRef.current.send(
               JSON.stringify({
@@ -595,25 +597,25 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
                   content: [
                     {
                       type: "input_text",
-                      text: "Introduce yourself professionally as Teja, the AI assistant from Techjays, and ask how you can help today."
-                    }
-                  ]
-                }
+                      text: "Introduce yourself professionally as Teja, the AI assistant from Techjays, and ask how you can help today.",
+                    },
+                  ],
+                },
               })
             );
-            
+
             // Trigger AI response
             wsRef.current.send(
               JSON.stringify({
-                type: "response.create"
+                type: "response.create",
               })
             );
-            
+
             // Set state to speaking for the welcome message
             updateVoiceState("speaking");
           }
         }, 500); // 500ms delay to ensure session is ready
-        
+
         // Only start audio capture if not already capturing
         if (!isCapturingRef.current) {
           startAudioCapture();
@@ -770,6 +772,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
             }
             currentResponseIdRef.current = newResponseId;
             isProcessingResponseRef.current = true;
+            isResponseDoneRef.current = false; // Mark response as active
             canSendAudioRef.current = false; // Stop sending audio while AI responds
             // Set state to speaking immediately when AI starts responding
             updateVoiceState("speaking");
@@ -924,6 +927,8 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
 
         case "response.done":
           // Response complete, wait for audio to finish before going back to listening
+          // Mark response as done immediately to prevent cancel attempts
+          isResponseDoneRef.current = true;
           // Clear the input buffer to remove any echo that was captured
           clearInputAudioBuffer();
 
@@ -945,10 +950,27 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
           break;
 
         case "error":
-          console.error("API Error:", message.error);
-          setError(message.error?.message || "An error occurred");
-          isProcessingResponseRef.current = false;
-          canSendAudioRef.current = true; // Resume sending audio on error
+          // Don't show error for cancel failures (response might already be done)
+          if (
+            message.error?.code === "response_cancel_not_active" ||
+            message.error?.message?.includes("no active response")
+          ) {
+            console.log(
+              `[${instanceIdRef.current}] Cancel failed - response already completed, ignoring error`
+            );
+            // Reset state since response is done
+            isResponseDoneRef.current = true;
+            isProcessingResponseRef.current = false;
+            canSendAudioRef.current = true;
+            if (voiceStateRef.current === "speaking") {
+              updateVoiceState("listening");
+            }
+          } else {
+            console.error("API Error:", message.error);
+            setError(message.error?.message || "An error occurred");
+            isProcessingResponseRef.current = false;
+            canSendAudioRef.current = true; // Resume sending audio on error
+          }
           break;
 
         default:
@@ -1325,31 +1347,41 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
       audioQueueRef.current = [];
       isPlayingRef.current = false;
 
-      // Only send cancel if we have an active response ID
+      // Only send cancel if we have an active response ID that hasn't completed yet
       if (
         wsRef.current?.readyState === WebSocket.OPEN &&
-        currentResponseIdRef.current
+        currentResponseIdRef.current &&
+        !isResponseDoneRef.current // Only cancel if response is still active
       ) {
-        // Send cancel response event with response ID if available
-        wsRef.current.send(
-          JSON.stringify({
-            type: "response.cancel",
-            response_id: currentResponseIdRef.current,
-          })
-        );
-        // Clear input buffer as well
-        wsRef.current.send(
-          JSON.stringify({
-            type: "input_audio_buffer.clear",
-          })
-        );
-      } else {
-        // Clear input buffer even if no response to cancel
-        if (wsRef.current?.readyState === WebSocket.OPEN) {
+        try {
+          // Send cancel response event with response ID if available
+          wsRef.current.send(
+            JSON.stringify({
+              type: "response.cancel",
+              response_id: currentResponseIdRef.current,
+            })
+          );
+        } catch (err) {
+          // Silently handle cancel errors (response might already be done)
+          console.log(
+            `[${instanceIdRef.current}] Cancel request failed (response may already be done):`,
+            err
+          );
+        }
+      }
+
+      // Always clear input buffer
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        try {
           wsRef.current.send(
             JSON.stringify({
               type: "input_audio_buffer.clear",
             })
+          );
+        } catch (err) {
+          console.log(
+            `[${instanceIdRef.current}] Error clearing input buffer:`,
+            err
           );
         }
       }
@@ -1357,6 +1389,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
       // Reset state
       currentResponseIdRef.current = null;
       isProcessingResponseRef.current = false;
+      isResponseDoneRef.current = false; // Reset done flag
       canSendAudioRef.current = true; // Resume sending audio
       updateVoiceState("listening");
       setAiResponse("");
@@ -1403,6 +1436,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
       lastProcessedItemIdRef.current = null;
       lastProcessedResponseIdRef.current = null;
       isProcessingResponseRef.current = false;
+      isResponseDoneRef.current = false; // Reset response done flag
       isConnectingRef.current = false;
       canSendAudioRef.current = true;
 
@@ -1712,7 +1746,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
       {/* Control buttons */}
       <div className="flex items-center gap-2 flex-shrink-0">
         {/* Interrupt button - only visible when speaking */}
-        {/* {voiceState === "speaking" && (
+        {voiceState === "speaking" && (
           <button
             onClick={handleInterrupt}
             className="p-1.5 sm:p-2 rounded-full bg-gray-100 hover:bg-gray-200 transition-all duration-200 hover:scale-105"
@@ -1720,7 +1754,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
           >
             <MicOff className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-gray-600" />
           </button>
-        )} */}
+        )}
 
         {/* End session button */}
         <button
