@@ -584,6 +584,8 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
             **Static Information:**
             -- Techjays was founded in July 9, 2020
             -- Techjays was founded by Philip Samuelraj
+            -- Techjays CEO is Philip Samuelraj
+            -- Techjays CTO is Jesso Clarence
             
             You have NO general knowledge about Techjays. You can ONLY answer using information retrieved from the search_techjays_knowledge function.
             
