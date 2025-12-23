@@ -458,9 +458,9 @@ const interruptAgent = useCallback((reason = "user_action") => {
               session: {
                 turn_detection: {
                   type: "server_vad",
-                  threshold: 0.5,
-                  prefix_padding_ms: 200,
-                  silence_duration_ms: 500,
+                  threshold: 0.6,
+                  prefix_padding_ms: 300,
+                  silence_duration_ms: 700,
                 },
               },
             })
@@ -634,9 +634,9 @@ const interruptAgent = useCallback((reason = "user_action") => {
 
             turn_detection: {
               type: "server_vad",
-              threshold: 0.5,           // 🔧 More sensitive (lower = more sensitive)
-              prefix_padding_ms: 200,   // 🔧 Faster response
-              silence_duration_ms: 500, // 🔧 Shorter wait time
+              threshold: 0.6,           // 🔧 More sensitive (lower = more sensitive)
+              prefix_padding_ms: 300,   // 🔧 Faster response
+              silence_duration_ms: 700, // 🔧 Shorter wait time
             },
             tools: [
               {
