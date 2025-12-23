@@ -629,7 +629,7 @@ const interruptAgent = useCallback((reason = "user_action") => {
               model: "whisper-1",
               language: "en",
               prompt:
-                "Techjays, Philip Samuelraj, Jesso Clarence, Dharmaraj, Agentic AI, RAG, MLOps, ChromaDB, Palantir, Techjays, Techjays, CEO, Arun, Aparna",
+                "Techjays, Philip Samuelraj, Jesso Clarence, Dharmaraj, Agentic AI, RAG, MLOps, ChromaDB, Palantir, Techjays, CEO, Arun, Aparna",
             },
 
             turn_detection: {
