@@ -49,6 +49,10 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
   const updateVoiceStateRef = useRef(null); // Store latest updateVoiceState function
   const hasShownChatRef = useRef(false); // Track if chat has been shown to prevent duplicate calls
   const isResponseDoneRef = useRef(false); // Track if response is already done (to prevent canceling completed responses)
+  const currentAudioSourceRef = useRef(null); // Track current playing audio source
+  const isInitialConnectionRef = useRef(true); // Track if this is the first connection (for welcome message)
+  const isReconnectingRef = useRef(false); // Prevent multiple simultaneous reconnection attempts
+  const [fatalError, setFatalError] = useState(null); // Fatal error state for error recovery
 
   // Token management refs
   const tokenRef = useRef(null); // Current authentication token
@@ -71,72 +75,6 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
   // RAG session key management
   const [sessionKey, setSessionKey] = useState(null);
   const sessionKeyRef = useRef(null);
-
-  // AudioWorklet processor code - runs in separate thread for better performance
-  const audioWorkletCode = `
-    class AudioCaptureProcessor extends AudioWorkletProcessor {
-      constructor() {
-        super();
-        this.bufferSize = 2400; // 100ms at 24kHz
-        this.buffer = new Float32Array(this.bufferSize);
-        this.bufferIndex = 0;
-        this.inputSampleRate = 48000;
-        this.outputSampleRate = 24000;
-        this.resampleRatio = this.outputSampleRate / this.inputSampleRate;
-      }
-      
-      // Simple linear interpolation resampling from 48kHz to 24kHz
-      resample(input) {
-        const outputLength = Math.floor(input.length * this.resampleRatio);
-        const output = new Float32Array(outputLength);
-        for (let i = 0; i < outputLength; i++) {
-          const srcIndex = i / this.resampleRatio;
-          const srcIndexFloor = Math.floor(srcIndex);
-          const srcIndexCeil = Math.min(srcIndexFloor + 1, input.length - 1);
-          const t = srcIndex - srcIndexFloor;
-          output[i] = input[srcIndexFloor] * (1 - t) + input[srcIndexCeil] * t;
-        }
-        return output;
-      }
-      
-      // Convert Float32 to Int16 PCM
-      float32ToInt16(float32Array) {
-        const int16Array = new Int16Array(float32Array.length);
-        for (let i = 0; i < float32Array.length; i++) {
-          const s = Math.max(-1, Math.min(1, float32Array[i]));
-          int16Array[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-        }
-        return int16Array;
-      }
-      
-      process(inputs, outputs, parameters) {
-        const input = inputs[0];
-        if (!input || !input[0]) return true;
-        
-        const inputData = input[0];
-        
-        // Resample from 48kHz to 24kHz
-        const resampled = this.resample(inputData);
-        
-        // Add resampled data to buffer
-        for (let i = 0; i < resampled.length; i++) {
-          this.buffer[this.bufferIndex++] = resampled[i];
-          
-          // When buffer is full, send it
-          if (this.bufferIndex >= this.bufferSize) {
-            const pcm16 = this.float32ToInt16(this.buffer);
-            this.port.postMessage(pcm16.buffer, [pcm16.buffer]);
-            this.buffer = new Float32Array(this.bufferSize);
-            this.bufferIndex = 0;
-          }
-        }
-        
-        return true;
-      }
-    }
-    
-    registerProcessor('audio-capture-processor', AudioCaptureProcessor);
-  `;
 
   // Azure OpenAI Realtime API configuration
   const AZURE_ENDPOINT = (
@@ -345,10 +283,19 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
   const fetchSpeechToken = useCallback(async () => {
     // Prevent multiple simultaneous token fetches
     if (isFetchingTokenRef.current) {
-      // Wait for existing fetch to complete
-      while (isFetchingTokenRef.current) {
+      // Wait for existing fetch to complete (with timeout to prevent infinite loop)
+      let attempts = 0;
+      const MAX_WAIT_ATTEMPTS = 50; // 5 seconds max (50 * 100ms)
+      
+      while (isFetchingTokenRef.current && attempts < MAX_WAIT_ATTEMPTS) {
         await new Promise((resolve) => setTimeout(resolve, 100));
+        attempts++;
       }
+      
+      if (attempts >= MAX_WAIT_ATTEMPTS) {
+        throw new Error("Token fetch timeout - another fetch is taking too long");
+      }
+      
       return tokenRef.current ? { token: tokenRef.current } : null;
     }
 
@@ -376,8 +323,14 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
           ? Math.floor((new Date(data.expiresAt).getTime() - Date.now()) / 1000)
           : 1200); // Default 20 minutes if not provided
 
-      // Refresh at 60 minutes (3600s) OR 2 minutes before expiration, whichever comes FIRST (smaller value)
-      const refreshIn = Math.min(3600, Math.max(0, expiresIn - 120));
+      // Refresh at 60 minutes (3600s) OR 5 minutes before expiration, whichever comes FIRST (smaller value)
+      // Increased buffer from 2 min to 5 min to reduce disconnection risk
+      const refreshIn = Math.min(3600, Math.max(0, expiresIn - 300));
+      
+      // Warn if token is expiring soon
+      if (expiresIn < 600) {
+        console.warn(`[${instanceIdRef.current}] ⚠️ Token expiring soon: ${expiresIn}s remaining`);
+      }
 
       // Clear existing refresh timer
       if (tokenRefreshTimerRef.current) {
@@ -405,6 +358,140 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
       throw err;
     }
   }, []);
+
+  // ⭐ CENTRALIZED INTERRUPT FUNCTION - Single source of truth
+  // ⭐ CENTRALIZED INTERRUPT FUNCTION - Single source of truth
+// ⭐ CENTRALIZED INTERRUPT FUNCTION - Single source of truth
+// Add this with your other refs at the top
+const lastInterruptTimeRef = useRef(0); // Track last interrupt time
+
+// Update your interruptAgent function:
+// In interruptAgent function (around line 447)
+// Replace your current interruptAgent function with this improved version:
+const interruptAgent = useCallback((reason = "user_action") => {
+  // ⭐ DEBOUNCE: Prevent rapid-fire interrupts (min 500ms between)
+  const now = Date.now();
+  if (now - lastInterruptTimeRef.current < 500) {
+    console.log(`[${instanceIdRef.current}] ⏸️ Interrupt debounced (too soon)`);
+    return false;
+  }
+  lastInterruptTimeRef.current = now;
+
+  // Only interrupt if agent is actually speaking or processing
+  if (
+    voiceStateRef.current !== "speaking" && 
+    !isProcessingResponseRef.current
+  ) {
+    console.log(`[${instanceIdRef.current}] ℹ️ Nothing to interrupt - agent not speaking`);
+    return false;
+  }
+
+  console.log(`[${instanceIdRef.current}] 🛑 Interrupting agent (${reason})`);
+
+  // 1. Stop current audio source immediately
+  if (currentAudioSourceRef.current) {
+    try {
+      currentAudioSourceRef.current.stop();
+      currentAudioSourceRef.current.disconnect();
+      currentAudioSourceRef.current = null;
+      console.log(`[${instanceIdRef.current}] ✅ Stopped audio playback`);
+    } catch (err) {
+      console.warn(`[${instanceIdRef.current}] ⚠️ Audio stop error:`, err.message);
+    }
+  }
+
+  // 2. Clear audio queue and playback flags
+  const queuedChunks = audioQueueRef.current.length;
+  audioQueueRef.current = [];
+  isPlayingRef.current = false;
+  
+  if (queuedChunks > 0) {
+    console.log(`[${instanceIdRef.current}] 🧹 Cleared ${queuedChunks} queued audio chunks`);
+  }
+
+  // 3. ⭐ NEW: Clear input buffer FIRST (before cancel)
+  // This prevents Azure from getting confused by buffered audio during cancel
+  if (wsRef.current?.readyState === WebSocket.OPEN) {
+    try {
+      wsRef.current.send(
+        JSON.stringify({
+          type: "input_audio_buffer.clear",
+        })
+      );
+      console.log(`[${instanceIdRef.current}] 🧹 Cleared input buffer (pre-cancel)`);
+    } catch (err) {
+      console.warn(`[${instanceIdRef.current}] ⚠️ Buffer clear failed:`, err.message);
+    }
+  }
+
+  // 4. ⭐ CRITICAL: Wait a bit before sending cancel (let buffer clear process)
+  setTimeout(() => {
+    // Only send cancel if WebSocket is still open and response is still active
+    if (
+      wsRef.current?.readyState === WebSocket.OPEN &&
+      currentResponseIdRef.current &&
+      !isResponseDoneRef.current &&
+      isProcessingResponseRef.current
+    ) {
+      try {
+        wsRef.current.send(
+          JSON.stringify({
+            type: "response.cancel",
+            response_id: currentResponseIdRef.current,
+          })
+        );
+        console.log(`[${instanceIdRef.current}] 📤 Sent response.cancel to server`);
+      } catch (err) {
+        console.warn(`[${instanceIdRef.current}] ⚠️ Cancel request failed:`, err.message);
+      }
+    } else {
+      console.log(`[${instanceIdRef.current}] ℹ️ Skipping cancel - response not active or already done`);
+    }
+
+    // 5. Reset turn detection after cancel has been sent
+    setTimeout(() => {
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        try {
+          wsRef.current.send(
+            JSON.stringify({
+              type: "session.update",
+              session: {
+                turn_detection: {
+                  type: "server_vad",
+                  threshold: 0.6,
+                  prefix_padding_ms: 300,
+                  silence_duration_ms: 700,
+                },
+              },
+            })
+          );
+          console.log(`[${instanceIdRef.current}] 🔄 Reset turn detection - ready for new speech`);
+        } catch (err) {
+          console.warn(`[${instanceIdRef.current}] ⚠️ Turn detection reset failed:`, err.message);
+        }
+      }
+    }, 100); // Additional delay after cancel
+  }, 50); // Small delay to let buffer clear process
+
+  // 6. Reset all state flags IMMEDIATELY (don't wait)
+  currentResponseIdRef.current = null;
+  isProcessingResponseRef.current = false;
+  isResponseDoneRef.current = false;
+  canSendAudioRef.current = true;
+  
+  // Also clear transcript refs
+  currentTranscriptRef.current = "";
+  setTranscript("");
+  
+  // 7. Update UI state
+  updateVoiceState("listening");
+  setAiResponse("");
+  currentAiResponseRef.current = "";
+
+  console.log(`[${instanceIdRef.current}] ✅ Interrupt complete - back to listening`);
+  
+  return true;
+}, [updateVoiceState]);
 
   // Initialize WebSocket connection
   const connectWebSocket = useCallback(async () => {
@@ -455,10 +542,10 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
           
           **GREETING PROTOCOL:**
           When introducing yourself at the start of a conversation:
-          - Keep it professional but warm (2-3 sentences)
-          - Example: "Hello! I'm Teja, your AI assistant from Techjays. I'm here to help you learn about our AI solutions, services, team, and projects. What would you like to know today?"
-          - Focus on being helpful, not overwhelming
-          - Always end with an invitation to ask questions
+          - Keep it brief and welcoming (1-2 sentences max)
+          - Example: "Hi! I'm Teja from Techjays. How can I help you today?"
+          - Be warm but concise
+          - Immediately invite the user to ask questions
           
           **CRITICAL TRANSCRIPTION CORRECTIONS:**
           Listen carefully and auto-correct these common voice misinterpretations:
@@ -542,14 +629,14 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
               model: "whisper-1",
               language: "en",
               prompt:
-                "Techjays, Philip Samuelraj, Jesso Clarence, Dharmaraj, Agentic AI, RAG, MLOps, ChromaDB, Palantir, Techjays, Techjays",
+                "Techjays, Philip Samuelraj, Jesso Clarence, Dharmaraj, Agentic AI, RAG, MLOps, ChromaDB, Palantir, Techjays, Techjays, CEO, User is asking technical questions about Techjays services and AI solutions. Ignore background noise and silence.",
             },
 
             turn_detection: {
               type: "server_vad",
-              threshold: 0.5,
-              prefix_padding_ms: 300,
-              silence_duration_ms: 800,
+              threshold: 0.6,           // 🔧 More sensitive (lower = more sensitive)
+              prefix_padding_ms: 300,   // 🔧 Faster response
+              silence_duration_ms: 700, // 🔧 Shorter wait time
             },
             tools: [
               {
@@ -581,40 +668,46 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
           onShowChat();
         }
 
-        // ⭐ ADD WELCOME MESSAGE
-        // Small delay to ensure session configuration is processed
-        setTimeout(() => {
-          if (wsRef.current?.readyState === WebSocket.OPEN) {
-            console.log("🎉 Triggering welcome message...");
+        // ⭐ WELCOME MESSAGE - Only on initial connection, not reconnection
+        if (isInitialConnectionRef.current) {
+          isInitialConnectionRef.current = false;
+          
+          // Small delay to ensure session configuration is processed
+          setTimeout(() => {
+            if (wsRef.current?.readyState === WebSocket.OPEN) {
+              // Send greeting trigger
+              wsRef.current.send(
+                JSON.stringify({
+                  type: "conversation.item.create",
+                  item: {
+                    type: "message",
+                    role: "user",
+                    content: [
+                      {
+                        type: "input_text",
+                        text: "Introduce yourself professionally as Teja, the AI assistant from Techjays, and ask how you can help today.",
+                      },
+                    ],
+                  },
+                })
+              );
 
-            // Send greeting trigger
-            wsRef.current.send(
-              JSON.stringify({
-                type: "conversation.item.create",
-                item: {
-                  type: "message",
-                  role: "user",
-                  content: [
-                    {
-                      type: "input_text",
-                      text: "Introduce yourself professionally as Teja, the AI assistant from Techjays, and ask how you can help today.",
-                    },
-                  ],
-                },
-              })
-            );
+              // Trigger AI response
+              wsRef.current.send(
+                JSON.stringify({
+                  type: "response.create",
+                })
+              );
 
-            // Trigger AI response
-            wsRef.current.send(
-              JSON.stringify({
-                type: "response.create",
-              })
-            );
-
-            // Set state to speaking for the welcome message
-            updateVoiceState("speaking");
-          }
-        }, 500); // 500ms delay to ensure session is ready
+              // Set state to speaking for the welcome message
+              updateVoiceState("speaking");
+            }
+          }, 500); // 500ms delay to ensure session is ready
+        } else {
+          // Reconnection - resume conversation without welcome
+          console.log(`[${instanceIdRef.current}] 🔄 Reconnected - resuming conversation`);
+          updateVoiceState("listening");
+        }
 
         // Only start audio capture if not already capturing
         if (!isCapturingRef.current) {
@@ -646,41 +739,93 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
         updateVoiceState("idle");
       };
 
+      // In connectWebSocket, update the onclose handler (around line 753)
       wsRef.current.onclose = (event) => {
         isConnectingRef.current = false;
-
-        // Only cleanup and show error if it's an unexpected closure
-        // Code 1000 is normal closure (intentional), don't cleanup if we're still active
-        if (event.code !== 1000) {
-          // Provide more helpful error messages based on close code
-          let errorMsg = "Connection closed unexpectedly.";
-          if (event.code === 1006) {
-            errorMsg = "Connection failed. Please try again.";
-          } else if (event.code === 1008) {
-            errorMsg = "Policy violation. Check API configuration.";
-          } else if (event.code === 1011) {
-            errorMsg = "Server error. Please try again later.";
-          } else if (event.code === 4001) {
-            errorMsg = "Authentication failed. Token may have expired.";
-          } else if (event.code === 4003) {
-            errorMsg = "Forbidden. Check your API permissions.";
-          }
-          if (event.reason) {
-            errorMsg += ` (${event.reason})`;
-          }
-          console.error(
-            `[${instanceIdRef.current}] Connection error:`,
-            errorMsg
-          );
-          setError(errorMsg);
-          cleanup(false); // Don't close WebSocket (it's already closed), just cleanup audio
-          // Clear global tracker on error
+      
+        console.log(`[${instanceIdRef.current}] WebSocket closed. Code: ${event.code}, Reason: ${event.reason || 'none'}`);
+      
+        // Code 1000 = normal closure (intentional)
+        if (event.code === 1000) {
+          wsRef.current = null;
           globalConnectionActive = false;
           globalWebSocket = null;
-        } else {
-          // Normal closure (code 1000) - WebSocket was closed intentionally
-          // Clear the ref and global tracker
+          return;
+        }
+      
+        // ⭐ IMPROVED: More lenient handling of Code 1006
+        // Check multiple conditions to determine if this is an "expected" interruption closure
+        const timeSinceLastInterrupt = Date.now() - lastInterruptTimeRef.current;
+        const isRecentInterrupt = timeSinceLastInterrupt < 3000; // Increased to 3 seconds
+        const wasProcessingResponse = isProcessingResponseRef.current;
+        
+        // If Code 1006 happened during/after an interrupt, this is likely expected behavior
+        if (event.code === 1006 && (isRecentInterrupt || wasProcessingResponse)) {
+          console.log(`[${instanceIdRef.current}] ℹ️ Code 1006 after interrupt (${timeSinceLastInterrupt}ms ago, processing: ${wasProcessingResponse}) - treating as expected, will NOT reconnect`);
+          
+          // Reset flags but DON'T reconnect
           wsRef.current = null;
+          globalConnectionActive = false;
+          globalWebSocket = null;
+          isProcessingResponseRef.current = false;
+          isResponseDoneRef.current = true;
+          
+          // Just update state to listening - user can continue with next request
+          if (voiceStateRef.current !== "idle") {
+            updateVoiceState("listening");
+          }
+          
+          // ⭐ CRITICAL: Restart the connection silently without user knowing
+          // This maintains the session without showing errors
+          setTimeout(() => {
+            console.log(`[${instanceIdRef.current}] 🔄 Silently re-establishing connection after interrupt...`);
+            if (isActive && connectWebSocketRef.current && !wsRef.current) {
+              connectWebSocketRef.current();
+            }
+          }, 500);
+          
+          return; // Don't proceed with error reconnection logic
+        }
+      
+        // ⭐ PREVENT RACE CONDITION: Check if reconnection already in progress
+        if (isReconnectingRef.current) {
+          console.log(`[${instanceIdRef.current}] Reconnection already in progress, skipping`);
+          return;
+        }
+      
+        // Unexpected disconnect - attempt recovery
+        if (isActive && voiceStateRef.current !== "idle") {
+          console.warn(`[${instanceIdRef.current}] Unexpected disconnect during active session (Code: ${event.code})`);
+          
+          isReconnectingRef.current = true;
+          
+          const attemptReconnect = () => {
+            console.log(`[${instanceIdRef.current}] Attempting automatic reconnection...`);
+            
+            wsRef.current = null;
+            globalConnectionActive = false;
+            globalWebSocket = null;
+            isConnectingRef.current = false;
+            
+            if (connectWebSocketRef.current) {
+              connectWebSocketRef.current()
+                .then(() => {
+                  isReconnectingRef.current = false;
+                })
+                .catch((err) => {
+                  console.error(`[${instanceIdRef.current}] Auto-reconnect failed:`, err);
+                  isReconnectingRef.current = false;
+                  setError("Connection lost. Please try again.");
+                  updateVoiceState("idle");
+                });
+            } else {
+              isReconnectingRef.current = false;
+            }
+          };
+      
+          setTimeout(attemptReconnect, 500);
+        } else {
+          cleanup(false);
           globalConnectionActive = false;
           globalWebSocket = null;
         }
@@ -691,7 +836,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
       setError("Failed to connect. Please try again.");
       updateVoiceState("idle");
     }
-  }, [fetchSpeechToken, updateVoiceState]);
+  }, [fetchSpeechToken, updateVoiceState, onShowChat]);
 
   // Clear the input audio buffer on the server
   const clearInputAudioBuffer = useCallback(() => {
@@ -711,10 +856,14 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
           break;
 
         case "input_audio_buffer.speech_started":
-          // Ignore speech detection if we're currently processing a response
-          if (isProcessingResponseRef.current) {
-            return;
+          // ⭐ Auto-interrupt when user starts speaking
+          const wasInterrupted = interruptAgent("user_speech");
+          
+          if (wasInterrupted) {
+            console.log(`[${instanceIdRef.current}] 🎤 User interrupted agent by speaking`);
           }
+          
+          // Update state to listening
           updateVoiceState("listening");
           currentTranscriptRef.current = "";
           setTranscript("");
@@ -949,29 +1098,32 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
           });
           break;
 
-        case "error":
-          // Don't show error for cancel failures (response might already be done)
-          if (
-            message.error?.code === "response_cancel_not_active" ||
-            message.error?.message?.includes("no active response")
-          ) {
-            console.log(
-              `[${instanceIdRef.current}] Cancel failed - response already completed, ignoring error`
-            );
-            // Reset state since response is done
-            isResponseDoneRef.current = true;
-            isProcessingResponseRef.current = false;
-            canSendAudioRef.current = true;
-            if (voiceStateRef.current === "speaking") {
-              updateVoiceState("listening");
+          case "error":
+            // Don't show error for cancel failures (response might already be done)
+            if (
+              message.error?.code === "response_cancel_not_active" ||
+              message.error?.message?.includes("no active response") ||
+              message.error?.message?.includes("cancel") // ⭐ ADD THIS
+            ) {
+              console.log(
+                `[${instanceIdRef.current}] ℹ️ Cancel ignored - response already completed`
+              );
+              // Reset state since response is done
+              isResponseDoneRef.current = true;
+              isProcessingResponseRef.current = false;
+              canSendAudioRef.current = true;
+              if (voiceStateRef.current === "speaking") {
+                updateVoiceState("listening");
+              }
+              // ⭐ DON'T SET ERROR - just log and continue
+              return; // ⭐ ADD RETURN to prevent error display
+            } else {
+              console.error("API Error:", message.error);
+              setError(message.error?.message || "An error occurred");
+              isProcessingResponseRef.current = false;
+              canSendAudioRef.current = true;
             }
-          } else {
-            console.error("API Error:", message.error);
-            setError(message.error?.message || "An error occurred");
-            isProcessingResponseRef.current = false;
-            canSendAudioRef.current = true; // Resume sending audio on error
-          }
-          break;
+            break;
 
         default:
           // console.log("Unhandled message type:", message.type);
@@ -984,6 +1136,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
       updateVoiceState,
       clearInputAudioBuffer,
       executeFunctionCall,
+      interruptAgent,
     ]
   );
 
@@ -1177,17 +1330,13 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
 
       let audioChunkCount = 0;
       processor.onaudioprocess = (e) => {
-        // Don't send audio while AI is speaking
-        if (!canSendAudioRef.current) {
-          return;
-        }
-
+        // ⭐ ALWAYS send audio for server VAD to detect interruptions
+        // Server-side VAD needs audio stream to detect when user starts speaking
+        
         // Use refs to check current state (avoid stale closures)
         if (
           wsRef.current?.readyState === WebSocket.OPEN &&
-          voiceStateRef.current !== "speaking" &&
-          voiceStateRef.current !== "processing" &&
-          !isProcessingResponseRef.current
+          voiceStateRef.current !== "processing"
         ) {
           const inputData = e.inputBuffer.getChannelData(0);
           const pcm16 = float32ToPcm16(inputData);
@@ -1235,7 +1384,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
         setError(`Microphone error: ${err.message || err.name}`);
       }
     }
-  }, [stopAudioCapture]);
+  }, [stopAudioCapture, startFrequencyAnalysis]);
 
   // Convert Float32 to PCM16
   const float32ToPcm16 = (float32Array) => {
@@ -1254,8 +1403,25 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
     isPlayingRef.current = true;
 
     while (audioQueueRef.current.length > 0) {
+      // Check for interruption before playing
+      if (!isPlayingRef.current) {
+        console.log(`[${instanceIdRef.current}] Playback interrupted`);
+        break;
+      }
+
       const audioData = audioQueueRef.current.shift();
-      await playAudioBuffer(audioData);
+
+      try {
+        await playAudioBuffer(audioData);
+      } catch (error) {
+        console.error(`[${instanceIdRef.current}] Audio playback error:`, error);
+      }
+
+      // Check for interruption after playing
+      if (!isPlayingRef.current) {
+        console.log(`[${instanceIdRef.current}] Playback interrupted between chunks`);
+        break;
+      }
     }
 
     isPlayingRef.current = false;
@@ -1307,7 +1473,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
 
   // Play a single audio buffer
   const playAudioBuffer = (arrayBuffer) => {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       if (!audioContextRef.current) {
         audioContextRef.current = new (window.AudioContext ||
           window.webkitAudioContext)({
@@ -1332,74 +1498,49 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
       const source = audioContextRef.current.createBufferSource();
       source.buffer = audioBuffer;
       source.connect(audioContextRef.current.destination);
-      source.onended = resolve;
+
+      // ⭐ Store source for interruption
+      currentAudioSourceRef.current = source;
+
+      source.onended = () => {
+        currentAudioSourceRef.current = null;
+        resolve();
+      };
+
+      source.onerror = (error) => {
+        currentAudioSourceRef.current = null;
+        reject(error);
+      };
+
       source.start();
     });
   };
 
-  // Interrupt AI speaking
-  const handleInterrupt = () => {
-    if (
-      voiceStateRef.current === "speaking" ||
-      isProcessingResponseRef.current
-    ) {
-      // Clear audio queue and stop playback
-      audioQueueRef.current = [];
-      isPlayingRef.current = false;
-
-      // Only send cancel if we have an active response ID that hasn't completed yet
-      if (
-        wsRef.current?.readyState === WebSocket.OPEN &&
-        currentResponseIdRef.current &&
-        !isResponseDoneRef.current // Only cancel if response is still active
-      ) {
-        try {
-          // Send cancel response event with response ID if available
-          wsRef.current.send(
-            JSON.stringify({
-              type: "response.cancel",
-              response_id: currentResponseIdRef.current,
-            })
-          );
-        } catch (err) {
-          // Silently handle cancel errors (response might already be done)
-          console.log(
-            `[${instanceIdRef.current}] Cancel request failed (response may already be done):`,
-            err
-          );
-        }
-      }
-
-      // Always clear input buffer
-      if (wsRef.current?.readyState === WebSocket.OPEN) {
-        try {
-          wsRef.current.send(
-            JSON.stringify({
-              type: "input_audio_buffer.clear",
-            })
-          );
-        } catch (err) {
-          console.log(
-            `[${instanceIdRef.current}] Error clearing input buffer:`,
-            err
-          );
-        }
-      }
-
-      // Reset state
-      currentResponseIdRef.current = null;
-      isProcessingResponseRef.current = false;
-      isResponseDoneRef.current = false; // Reset done flag
-      canSendAudioRef.current = true; // Resume sending audio
-      updateVoiceState("listening");
-      setAiResponse("");
-      currentAiResponseRef.current = "";
+  // ⭐ SIMPLIFIED handleInterrupt - uses centralized interruptAgent
+  const handleInterrupt = useCallback(() => {
+    const wasInterrupted = interruptAgent("button_click");
+    
+    if (wasInterrupted) {
+      console.log(`[${instanceIdRef.current}] 👆 User interrupted agent via button`);
+    } else {
+      console.log(`[${instanceIdRef.current}] ℹ️ No active response to interrupt`);
     }
-  };
+  }, [interruptAgent]);
 
   // Cleanup resources
   const cleanup = useCallback(
     (shouldCloseWebSocket = true) => {
+      // ⭐ Stop any playing audio first
+      if (currentAudioSourceRef.current) {
+        try {
+          currentAudioSourceRef.current.stop();
+          currentAudioSourceRef.current.disconnect();
+          currentAudioSourceRef.current = null;
+        } catch (e) {
+          /* ignore */
+        }
+      }
+
       // Clear token refresh timer
       if (tokenRefreshTimerRef.current) {
         clearTimeout(tokenRefreshTimerRef.current);
@@ -1457,6 +1598,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
     setTranscript("");
     setAiResponse("");
     setError(null);
+    setFatalError(null); // Clear fatal error on session end
     setAudioLevel(0);
     currentTranscriptRef.current = "";
     currentAiResponseRef.current = "";
@@ -1465,8 +1607,10 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
     lastProcessedResponseIdRef.current = null;
     isProcessingResponseRef.current = false;
     isConnectingRef.current = false;
+    isReconnectingRef.current = false; // Reset reconnection flag
     canSendAudioRef.current = true;
     hasShownChatRef.current = false; // Reset so chat can be shown again next time
+    isInitialConnectionRef.current = true; // Reset for next session
     onClose();
   };
 
@@ -1476,6 +1620,17 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
     cleanupRef.current = cleanup;
     updateVoiceStateRef.current = updateVoiceState;
   }, [connectWebSocket, cleanup, updateVoiceState]);
+
+  // ⭐ MEMORY LEAK FIX: Cleanup token refresh timer on unmount
+  useEffect(() => {
+    return () => {
+      // Cleanup on unmount
+      if (tokenRefreshTimerRef.current) {
+        clearTimeout(tokenRefreshTimerRef.current);
+        tokenRefreshTimerRef.current = null;
+      }
+    };
+  }, []);
 
   // Simplified session management - ONLY depends on isActive
   // Connection logic is self-contained to prevent reconnection issues
@@ -1616,7 +1771,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
       case "listening":
         return transcript ? `"${transcript}"` : "Listening...";
       case "processing":
-        return "Searching knowledge base..."; // Updated to be more specific
+        return "Searching knowledge base...";
       case "speaking":
         return "Speaking...";
       default:
@@ -1631,6 +1786,29 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
         return "Ready";
     }
   };
+
+  // ⭐ ERROR BOUNDARY: Show error recovery UI if fatal error occurs
+  if (fatalError) {
+    return (
+      <div className="flex items-center justify-between w-full gap-3 p-4 bg-red-50 border border-red-200 rounded-lg">
+        <div className="flex-1">
+          <p className="text-sm font-medium text-red-800">
+            Voice assistant encountered an error.
+          </p>
+          <p className="text-xs text-red-600 mt-1">{fatalError}</p>
+        </div>
+        <button
+          onClick={() => {
+            setFatalError(null);
+            handleEndSession();
+          }}
+          className="px-3 py-1.5 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700 transition-colors"
+        >
+          Reset
+        </button>
+      </div>
+    );
+  }
 
   if (!isActive) return null;
 
