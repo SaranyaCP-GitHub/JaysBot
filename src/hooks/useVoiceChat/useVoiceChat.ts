@@ -71,12 +71,18 @@ const useVoiceChat = (params: UseVoiceChatParams): UseVoiceChatReturn => {
         ) {
           // Update the last message instead of adding a new one (for streaming)
           const updated = [...prev];
+          const lastMessage = updated[updated.length - 1];
+          
+          // ⭐ FIX: If message has text, isTyping should be false
+          // If isTyping is explicitly provided, use it; otherwise default to false (don't preserve old value)
+          const shouldBeTyping = message.isTyping === true && !message.text?.trim();
+          
           updated[updated.length - 1] = {
-            ...updated[updated.length - 1],
+            ...lastMessage,
             text: message.text,
-            isVoice: message.isVoice || updated[updated.length - 1].isVoice,
+            isVoice: message.isVoice || lastMessage.isVoice,
             isStreaming: message.isStreaming !== false, // Default to true unless explicitly false
-            isTyping: message.isTyping !== undefined ? message.isTyping : updated[updated.length - 1].isTyping, // Preserve or update isTyping
+            isTyping: shouldBeTyping, // Only true if explicitly set AND no text
           };
           return updated;
         }
@@ -86,7 +92,8 @@ const useVoiceChat = (params: UseVoiceChatParams): UseVoiceChatReturn => {
           { 
             ...message, 
             isStreaming: message.isStreaming !== false,
-            isTyping: message.isTyping !== undefined ? message.isTyping : false,
+            // ⭐ FIX: Only set isTyping to true if explicitly set AND no text
+            isTyping: message.isTyping === true && !message.text?.trim(),
           },
         ];
       });
