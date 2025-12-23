@@ -429,6 +429,18 @@ const AIAssistantPopup = () => {
       )}
 
       <style>{`
+        @keyframes loadingDotBounce {
+          0%, 100% {
+            transform: translateY(0);
+          }
+          50% {
+            transform: translateY(-8px);
+          }
+        }
+        .loading-dot-bounce {
+          animation: loadingDotBounce 1.4s ease-in-out infinite;
+        }
+        
         @keyframes fadeIn {
           from { opacity: 0; transform: translateY(10px); }
           to { opacity: 1; transform: translateY(0); }

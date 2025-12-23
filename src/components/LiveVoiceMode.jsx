@@ -583,6 +583,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
 
             **Static Information:**
             -- Techjays was founded in July 9, 2020
+            -- Techjays was founded by Philip Samuelraj
             
             You have NO general knowledge about Techjays. You can ONLY answer using information retrieved from the search_techjays_knowledge function.
             
@@ -591,7 +592,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
             1. **ALWAYS call search_techjays_knowledge FIRST** - No exceptions
             2. **WAIT for search results**
             3. **Check if results contain the specific answer:**
-               - ✅ Results have the exact info → Answer using ONLY that information
+               - ✅ Results have the exact info → Answer using ONLY that information, For static information, use the static information provided above.
                - ⚠️ Results are vague/partial → Say: "Based on our knowledge base, [partial answer]. For complete details, contact info@techjays.com"
                - ❌ Results don't answer the question → Say: "I don't have that specific information. Please contact info@techjays.com"
             
@@ -2039,6 +2040,18 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
 
       {/* Component-specific styles */}
       <style>{`
+        @keyframes loadingDotBounce {
+          0%, 100% {
+            transform: translateY(0);
+          }
+          50% {
+            transform: translateY(-8px);
+          }
+        }
+        .loading-dot-bounce {
+          animation: loadingDotBounce 1.4s ease-in-out infinite;
+        }
+        
         @keyframes voiceFadeIn {
           from { opacity: 0; transform: scale(0.95); }
           to { opacity: 1; transform: scale(1); }

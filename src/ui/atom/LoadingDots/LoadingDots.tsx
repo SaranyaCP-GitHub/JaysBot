@@ -29,18 +29,18 @@ const LoadingDots: React.FC<LoadingDotsProps> = ({
   return (
     <div className={`flex gap-2 items-center ${className}`}>
       <div
-        className={`${dotSize} rounded-full animate-bounce ${dotClassName}`}
+        className={`${dotSize} rounded-full loading-dot-bounce ${dotClassName}`}
         style={{ backgroundColor: color }}
       />
       <div
-        className={`${dotSize} rounded-full animate-bounce ${dotClassName}`}
+        className={`${dotSize} rounded-full loading-dot-bounce ${dotClassName}`}
         style={{
           backgroundColor: color,
           animationDelay: "0.2s",
         }}
       />
       <div
-        className={`${dotSize} rounded-full animate-bounce ${dotClassName}`}
+        className={`${dotSize} rounded-full loading-dot-bounce ${dotClassName}`}
         style={{
           backgroundColor: color,
           animationDelay: "0.4s",
