@@ -373,7 +373,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
   // In interruptAgent function (around line 447)
   // Replace your current interruptAgent function with this improved version:
   const interruptAgent = useCallback(
-    (reason = "user_action") => {
+    (reason = "user_action", keepBuffer = false) => {
       // ⭐ DEBOUNCE: Prevent rapid-fire interrupts (min 500ms between)
       const now = Date.now();
       if (now - lastInterruptTimeRef.current < 500) {
@@ -425,35 +425,35 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
         );
       }
 
-      // 3. ⭐ NEW: Clear input buffer FIRST (before cancel)
-      // This prevents Azure from getting confused by buffered audio during cancel
+      // 3. ⭐ THE FIX: Only clear the input buffer if it's NOT a voice-triggered interrupt
+      // If the user is already speaking, clearing the buffer deletes their "Hello..."
       if (wsRef.current?.readyState === WebSocket.OPEN) {
-        try {
-          wsRef.current.send(
-            JSON.stringify({
-              type: "input_audio_buffer.clear",
-            })
-          );
+        if (!keepBuffer) {
+          try {
+            wsRef.current.send(
+              JSON.stringify({
+                type: "input_audio_buffer.clear",
+              })
+            );
+            console.log(
+              `[${instanceIdRef.current}] 🧹 Cleared input buffer (User Action)`
+            );
+          } catch (err) {
+            console.warn(
+              `[${instanceIdRef.current}] ⚠️ Buffer clear failed:`,
+              err.message
+            );
+          }
+        } else {
           console.log(
-            `[${instanceIdRef.current}] 🧹 Cleared input buffer (pre-cancel)`
-          );
-        } catch (err) {
-          console.warn(
-            `[${instanceIdRef.current}] ⚠️ Buffer clear failed:`,
-            err.message
+            `[${instanceIdRef.current}] 🔒 Keeping input buffer (user is speaking)`
           );
         }
       }
 
-      // 4. ⭐ CRITICAL: Wait a bit before sending cancel (let buffer clear process)
-      setTimeout(() => {
-        // Only send cancel if WebSocket is still open and response is still active
-        if (
-          wsRef.current?.readyState === WebSocket.OPEN &&
-          currentResponseIdRef.current &&
-          !isResponseDoneRef.current &&
-          isProcessingResponseRef.current
-        ) {
+      // 4. Always cancel the AI's current response
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        if (currentResponseIdRef.current && !isResponseDoneRef.current) {
           try {
             wsRef.current.send(
               JSON.stringify({
@@ -470,41 +470,37 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
               err.message
             );
           }
-        } else {
-          console.log(
-            `[${instanceIdRef.current}] ℹ️ Skipping cancel - response not active or already done`
-          );
         }
+      }
 
-        // 5. Reset turn detection after cancel has been sent
-        setTimeout(() => {
-          if (wsRef.current?.readyState === WebSocket.OPEN) {
-            try {
-              wsRef.current.send(
-                JSON.stringify({
-                  type: "session.update",
-                  session: {
-                    turn_detection: {
-                      type: "server_vad",
-                      threshold: 0.6,
-                      prefix_padding_ms: 300,
-                      silence_duration_ms: 700,
-                    },
+      // 5. Reset turn detection after cancel has been sent
+      setTimeout(() => {
+        if (wsRef.current?.readyState === WebSocket.OPEN) {
+          try {
+            wsRef.current.send(
+              JSON.stringify({
+                type: "session.update",
+                session: {
+                  turn_detection: {
+                    type: "server_vad",
+                    threshold: 0.6,
+                    prefix_padding_ms: 300,
+                    silence_duration_ms: 700,
                   },
-                })
-              );
-              console.log(
-                `[${instanceIdRef.current}] 🔄 Reset turn detection - ready for new speech`
-              );
-            } catch (err) {
-              console.warn(
-                `[${instanceIdRef.current}] ⚠️ Turn detection reset failed:`,
-                err.message
-              );
-            }
+                },
+              })
+            );
+            console.log(
+              `[${instanceIdRef.current}] 🔄 Reset turn detection - ready for new speech`
+            );
+          } catch (err) {
+            console.warn(
+              `[${instanceIdRef.current}] ⚠️ Turn detection reset failed:`,
+              err.message
+            );
           }
-        }, 100); // Additional delay after cancel
-      }, 50); // Small delay to let buffer clear process
+        }
+      }, 100); // Additional delay after cancel
 
       // 6. Reset all state flags IMMEDIATELY (don't wait)
       currentResponseIdRef.current = null;
@@ -924,7 +920,9 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
 
         case "input_audio_buffer.speech_started":
           // ⭐ Auto-interrupt when user starts speaking
-          const wasInterrupted = interruptAgent("user_speech");
+          console.log("VAD: User started speaking. Interrupting AI but KEEPING buffer.");
+          // Pass 'true' to keepBuffer because the user is currently talking
+          const wasInterrupted = interruptAgent("vad_speech", true);
 
           if (wasInterrupted) {
             console.log(
