@@ -8,6 +8,7 @@ export interface ChatMessage {
   text: string;
   isVoice?: boolean;
   isStreaming?: boolean;
+  isTyping?: boolean;
 }
 
 /**
@@ -75,13 +76,18 @@ const useVoiceChat = (params: UseVoiceChatParams): UseVoiceChatReturn => {
             text: message.text,
             isVoice: message.isVoice || updated[updated.length - 1].isVoice,
             isStreaming: message.isStreaming !== false, // Default to true unless explicitly false
+            isTyping: message.isTyping !== undefined ? message.isTyping : updated[updated.length - 1].isTyping, // Preserve or update isTyping
           };
           return updated;
         }
         // Otherwise, add as a new message
         return [
           ...prev,
-          { ...message, isStreaming: message.isStreaming !== false },
+          { 
+            ...message, 
+            isStreaming: message.isStreaming !== false,
+            isTyping: message.isTyping !== undefined ? message.isTyping : false,
+          },
         ];
       });
     },

@@ -582,7 +582,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
             **CRITICAL: STRICT RAG-ONLY PROTOCOL**
 
             **Static Information:**
-            -- Founded in July 9, 2020
+            -- Techjays was founded in July 9, 2020
             
             You have NO general knowledge about Techjays. You can ONLY answer using information retrieved from the search_techjays_knowledge function.
             
@@ -969,6 +969,14 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
                 text: message.transcript,
                 isVoice: true,
               });
+              
+              // ⭐ Show typing indicator immediately after user message appears
+              onAddMessage({
+                type: "ai",
+                text: "",
+                isVoice: true,
+                isTyping: true,
+              });
             }
             // Only show chat once to prevent remounting and reconnection
             if (onShowChat && !hasShownChatRef.current) {
@@ -994,6 +1002,9 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
             updateVoiceState("speaking");
             // Clear any buffered audio to prevent echo processing
             clearInputAudioBuffer();
+            
+            // ⭐ Typing indicator is already added after transcript, so we don't need to add it here
+            // It will be replaced when the actual response starts streaming
           }
           break;
 
@@ -1010,12 +1021,14 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
             setAiResponse(currentAiResponseRef.current);
 
             // Stream to chat history as text comes in
+            // This will replace the typing indicator if it exists
             if (onAddMessage && currentAiResponseRef.current) {
               onAddMessage({
                 type: "ai",
                 text: currentAiResponseRef.current,
                 isVoice: true,
                 isStreaming: true, // Mark as streaming
+                isTyping: false, // Replace typing indicator
               });
             }
 
@@ -1072,6 +1085,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
               text: responseText,
               isVoice: true,
               isStreaming: false, // Mark as complete
+              isTyping: false, // Ensure typing indicator is removed
             });
           }
           break;

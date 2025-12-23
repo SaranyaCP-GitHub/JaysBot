@@ -372,11 +372,15 @@ const AIAssistantPopup = () => {
                                     <AudioLines className="w-3 h-3" />
                                   </div>
                                 )} */}
-                                <p className="text-gray-800 text-sm sm:text-base leading-relaxed whitespace-pre-wrap break-words">
-                                  {message.isVoice
-                                    ? parseBoldText(message.text)
-                                    : parseBoldText(message.text)}
-                                </p>
+                                {message.isTyping ? (
+                                  <LoadingDots size="md" color="#818cf8" />
+                                ) : (
+                                  <p className="text-gray-800 text-sm sm:text-base leading-relaxed whitespace-pre-wrap break-words">
+                                    {message.isVoice
+                                      ? parseBoldText(message.text)
+                                      : parseBoldText(message.text)}
+                                  </p>
+                                )}
                               </div>
                             </div>
                           </div>
