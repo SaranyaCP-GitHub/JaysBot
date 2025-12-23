@@ -286,16 +286,18 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
       // Wait for existing fetch to complete (with timeout to prevent infinite loop)
       let attempts = 0;
       const MAX_WAIT_ATTEMPTS = 50; // 5 seconds max (50 * 100ms)
-      
+
       while (isFetchingTokenRef.current && attempts < MAX_WAIT_ATTEMPTS) {
         await new Promise((resolve) => setTimeout(resolve, 100));
         attempts++;
       }
-      
+
       if (attempts >= MAX_WAIT_ATTEMPTS) {
-        throw new Error("Token fetch timeout - another fetch is taking too long");
+        throw new Error(
+          "Token fetch timeout - another fetch is taking too long"
+        );
       }
-      
+
       return tokenRef.current ? { token: tokenRef.current } : null;
     }
 
@@ -326,10 +328,12 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
       // Refresh at 60 minutes (3600s) OR 5 minutes before expiration, whichever comes FIRST (smaller value)
       // Increased buffer from 2 min to 5 min to reduce disconnection risk
       const refreshIn = Math.min(3600, Math.max(0, expiresIn - 300));
-      
+
       // Warn if token is expiring soon
       if (expiresIn < 600) {
-        console.warn(`[${instanceIdRef.current}] ⚠️ Token expiring soon: ${expiresIn}s remaining`);
+        console.warn(
+          `[${instanceIdRef.current}] ⚠️ Token expiring soon: ${expiresIn}s remaining`
+        );
       }
 
       // Clear existing refresh timer
@@ -361,137 +365,170 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
 
   // ⭐ CENTRALIZED INTERRUPT FUNCTION - Single source of truth
   // ⭐ CENTRALIZED INTERRUPT FUNCTION - Single source of truth
-// ⭐ CENTRALIZED INTERRUPT FUNCTION - Single source of truth
-// Add this with your other refs at the top
-const lastInterruptTimeRef = useRef(0); // Track last interrupt time
+  // ⭐ CENTRALIZED INTERRUPT FUNCTION - Single source of truth
+  // Add this with your other refs at the top
+  const lastInterruptTimeRef = useRef(0); // Track last interrupt time
 
-// Update your interruptAgent function:
-// In interruptAgent function (around line 447)
-// Replace your current interruptAgent function with this improved version:
-const interruptAgent = useCallback((reason = "user_action") => {
-  // ⭐ DEBOUNCE: Prevent rapid-fire interrupts (min 500ms between)
-  const now = Date.now();
-  if (now - lastInterruptTimeRef.current < 500) {
-    console.log(`[${instanceIdRef.current}] ⏸️ Interrupt debounced (too soon)`);
-    return false;
-  }
-  lastInterruptTimeRef.current = now;
-
-  // Only interrupt if agent is actually speaking or processing
-  if (
-    voiceStateRef.current !== "speaking" && 
-    !isProcessingResponseRef.current
-  ) {
-    console.log(`[${instanceIdRef.current}] ℹ️ Nothing to interrupt - agent not speaking`);
-    return false;
-  }
-
-  console.log(`[${instanceIdRef.current}] 🛑 Interrupting agent (${reason})`);
-
-  // 1. Stop current audio source immediately
-  if (currentAudioSourceRef.current) {
-    try {
-      currentAudioSourceRef.current.stop();
-      currentAudioSourceRef.current.disconnect();
-      currentAudioSourceRef.current = null;
-      console.log(`[${instanceIdRef.current}] ✅ Stopped audio playback`);
-    } catch (err) {
-      console.warn(`[${instanceIdRef.current}] ⚠️ Audio stop error:`, err.message);
-    }
-  }
-
-  // 2. Clear audio queue and playback flags
-  const queuedChunks = audioQueueRef.current.length;
-  audioQueueRef.current = [];
-  isPlayingRef.current = false;
-  
-  if (queuedChunks > 0) {
-    console.log(`[${instanceIdRef.current}] 🧹 Cleared ${queuedChunks} queued audio chunks`);
-  }
-
-  // 3. ⭐ NEW: Clear input buffer FIRST (before cancel)
-  // This prevents Azure from getting confused by buffered audio during cancel
-  if (wsRef.current?.readyState === WebSocket.OPEN) {
-    try {
-      wsRef.current.send(
-        JSON.stringify({
-          type: "input_audio_buffer.clear",
-        })
-      );
-      console.log(`[${instanceIdRef.current}] 🧹 Cleared input buffer (pre-cancel)`);
-    } catch (err) {
-      console.warn(`[${instanceIdRef.current}] ⚠️ Buffer clear failed:`, err.message);
-    }
-  }
-
-  // 4. ⭐ CRITICAL: Wait a bit before sending cancel (let buffer clear process)
-  setTimeout(() => {
-    // Only send cancel if WebSocket is still open and response is still active
-    if (
-      wsRef.current?.readyState === WebSocket.OPEN &&
-      currentResponseIdRef.current &&
-      !isResponseDoneRef.current &&
-      isProcessingResponseRef.current
-    ) {
-      try {
-        wsRef.current.send(
-          JSON.stringify({
-            type: "response.cancel",
-            response_id: currentResponseIdRef.current,
-          })
+  // Update your interruptAgent function:
+  // In interruptAgent function (around line 447)
+  // Replace your current interruptAgent function with this improved version:
+  const interruptAgent = useCallback(
+    (reason = "user_action") => {
+      // ⭐ DEBOUNCE: Prevent rapid-fire interrupts (min 500ms between)
+      const now = Date.now();
+      if (now - lastInterruptTimeRef.current < 500) {
+        console.log(
+          `[${instanceIdRef.current}] ⏸️ Interrupt debounced (too soon)`
         );
-        console.log(`[${instanceIdRef.current}] 📤 Sent response.cancel to server`);
-      } catch (err) {
-        console.warn(`[${instanceIdRef.current}] ⚠️ Cancel request failed:`, err.message);
+        return false;
       }
-    } else {
-      console.log(`[${instanceIdRef.current}] ℹ️ Skipping cancel - response not active or already done`);
-    }
+      lastInterruptTimeRef.current = now;
 
-    // 5. Reset turn detection after cancel has been sent
-    setTimeout(() => {
+      // Only interrupt if agent is actually speaking or processing
+      if (
+        voiceStateRef.current !== "speaking" &&
+        !isProcessingResponseRef.current
+      ) {
+        console.log(
+          `[${instanceIdRef.current}] ℹ️ Nothing to interrupt - agent not speaking`
+        );
+        return false;
+      }
+
+      console.log(
+        `[${instanceIdRef.current}] 🛑 Interrupting agent (${reason})`
+      );
+
+      // 1. Stop current audio source immediately
+      if (currentAudioSourceRef.current) {
+        try {
+          currentAudioSourceRef.current.stop();
+          currentAudioSourceRef.current.disconnect();
+          currentAudioSourceRef.current = null;
+          console.log(`[${instanceIdRef.current}] ✅ Stopped audio playback`);
+        } catch (err) {
+          console.warn(
+            `[${instanceIdRef.current}] ⚠️ Audio stop error:`,
+            err.message
+          );
+        }
+      }
+
+      // 2. Clear audio queue and playback flags
+      const queuedChunks = audioQueueRef.current.length;
+      audioQueueRef.current = [];
+      isPlayingRef.current = false;
+
+      if (queuedChunks > 0) {
+        console.log(
+          `[${instanceIdRef.current}] 🧹 Cleared ${queuedChunks} queued audio chunks`
+        );
+      }
+
+      // 3. ⭐ NEW: Clear input buffer FIRST (before cancel)
+      // This prevents Azure from getting confused by buffered audio during cancel
       if (wsRef.current?.readyState === WebSocket.OPEN) {
         try {
           wsRef.current.send(
             JSON.stringify({
-              type: "session.update",
-              session: {
-                turn_detection: {
-                  type: "server_vad",
-                  threshold: 0.6,
-                  prefix_padding_ms: 300,
-                  silence_duration_ms: 700,
-                },
-              },
+              type: "input_audio_buffer.clear",
             })
           );
-          console.log(`[${instanceIdRef.current}] 🔄 Reset turn detection - ready for new speech`);
+          console.log(
+            `[${instanceIdRef.current}] 🧹 Cleared input buffer (pre-cancel)`
+          );
         } catch (err) {
-          console.warn(`[${instanceIdRef.current}] ⚠️ Turn detection reset failed:`, err.message);
+          console.warn(
+            `[${instanceIdRef.current}] ⚠️ Buffer clear failed:`,
+            err.message
+          );
         }
       }
-    }, 100); // Additional delay after cancel
-  }, 50); // Small delay to let buffer clear process
 
-  // 6. Reset all state flags IMMEDIATELY (don't wait)
-  currentResponseIdRef.current = null;
-  isProcessingResponseRef.current = false;
-  isResponseDoneRef.current = false;
-  canSendAudioRef.current = true;
-  
-  // Also clear transcript refs
-  currentTranscriptRef.current = "";
-  setTranscript("");
-  
-  // 7. Update UI state
-  updateVoiceState("listening");
-  setAiResponse("");
-  currentAiResponseRef.current = "";
+      // 4. ⭐ CRITICAL: Wait a bit before sending cancel (let buffer clear process)
+      setTimeout(() => {
+        // Only send cancel if WebSocket is still open and response is still active
+        if (
+          wsRef.current?.readyState === WebSocket.OPEN &&
+          currentResponseIdRef.current &&
+          !isResponseDoneRef.current &&
+          isProcessingResponseRef.current
+        ) {
+          try {
+            wsRef.current.send(
+              JSON.stringify({
+                type: "response.cancel",
+                response_id: currentResponseIdRef.current,
+              })
+            );
+            console.log(
+              `[${instanceIdRef.current}] 📤 Sent response.cancel to server`
+            );
+          } catch (err) {
+            console.warn(
+              `[${instanceIdRef.current}] ⚠️ Cancel request failed:`,
+              err.message
+            );
+          }
+        } else {
+          console.log(
+            `[${instanceIdRef.current}] ℹ️ Skipping cancel - response not active or already done`
+          );
+        }
 
-  console.log(`[${instanceIdRef.current}] ✅ Interrupt complete - back to listening`);
-  
-  return true;
-}, [updateVoiceState]);
+        // 5. Reset turn detection after cancel has been sent
+        setTimeout(() => {
+          if (wsRef.current?.readyState === WebSocket.OPEN) {
+            try {
+              wsRef.current.send(
+                JSON.stringify({
+                  type: "session.update",
+                  session: {
+                    turn_detection: {
+                      type: "server_vad",
+                      threshold: 0.6,
+                      prefix_padding_ms: 300,
+                      silence_duration_ms: 700,
+                    },
+                  },
+                })
+              );
+              console.log(
+                `[${instanceIdRef.current}] 🔄 Reset turn detection - ready for new speech`
+              );
+            } catch (err) {
+              console.warn(
+                `[${instanceIdRef.current}] ⚠️ Turn detection reset failed:`,
+                err.message
+              );
+            }
+          }
+        }, 100); // Additional delay after cancel
+      }, 50); // Small delay to let buffer clear process
+
+      // 6. Reset all state flags IMMEDIATELY (don't wait)
+      currentResponseIdRef.current = null;
+      isProcessingResponseRef.current = false;
+      isResponseDoneRef.current = false;
+      canSendAudioRef.current = true;
+
+      // Also clear transcript refs
+      currentTranscriptRef.current = "";
+      setTranscript("");
+
+      // 7. Update UI state
+      updateVoiceState("listening");
+      setAiResponse("");
+      currentAiResponseRef.current = "";
+
+      console.log(
+        `[${instanceIdRef.current}] ✅ Interrupt complete - back to listening`
+      );
+
+      return true;
+    },
+    [updateVoiceState]
+  );
 
   // Initialize WebSocket connection
   const connectWebSocket = useCallback(async () => {
@@ -535,91 +572,97 @@ const interruptAgent = useCallback((reason = "user_action") => {
           type: "session.update",
           session: {
             modalities: ["text", "audio"],
-            instructions: `You are Teja, the voice AI assistant for Techjays (T-E-C-H-J-A-Y-S), a custom software and AI solutions company.
-          
-          **YOUR CORE IDENTITY:**
-          You are a knowledgeable, conversational voice assistant. Speak naturally like a helpful company representative - not robotic, not overly formal. Think of yourself as the friendly voice of Techjays.
-          
-          **GREETING PROTOCOL:**
-          When introducing yourself at the start of a conversation:
-          - Keep it brief and welcoming (1-2 sentences max)
-          - Example: "Hi! I'm Teja from Techjays. How can I help you today?"
-          - Be warm but concise
-          - Immediately invite the user to ask questions
-          
-          **CRITICAL TRANSCRIPTION CORRECTIONS:**
-          Listen carefully and auto-correct these common voice misinterpretations:
-          - "Texas" / "Tech Jazz" / "Tech Jays" / "TechJS" / "Tech J S / Tekjays" → Techjays
-          - "Philip Samuel" / "Philip Sam" → Philip Samuelraj  
-          - "Jaso" / "Jesse" / "Jess" → Jesso Clarence
-          - "Dharma Raj" / "Dharma" → Dharmaraj
-          
-          **IMPORTANT:** If you detect the user speaking in a non-English language, simply respond to their question in English anyway. Do not mention language preferences or ask them to switch languages - just provide the answer naturally in English.
-          
-          **LEADERSHIP FACTS (MEMORIZE THESE):**
-          - Philip Samuelraj = Founder & CEO (Chief Helper)
-          - Jesso Clarence = CTO
-          - Only reference Section 1.2 for internal leadership
-          - Never confuse client testimonials with company team
-          
-          **YOUR MISSION:**
-          Answer questions about Techjays using the search_techjays_knowledge function. This includes:
-          
-          ✅ **ALWAYS ANSWER (These are Techjays topics):**
-          - AI technologies Techjays uses/offers (RAG, LLMs, Agentic AI, MLOps, etc.)
-          - Technical concepts related to Techjays services (what is RAG, how does it work, etc.)
-          - Techjays services & capabilities
-          - Projects & case studies
-          - Team & culture
-          - Technologies & tech stack
-          - Company information
-          - Clients & partnerships
-          
-          ❌ **POLITELY DECLINE (Non-Techjays topics):**
-          - Weather, news, current events
-          - General math/coding problems unrelated to Techjays
-          - Personal advice
-          - Other companies (unless comparing to Techjays services)
-          - Entertainment, recipes, etc.
-          
-          **KEY RULE:** If someone asks "What is RAG?" or "Explain Agentic AI" - these ARE Techjays questions because we offer these services! Search and explain how Techjays implements them.
-          
-          **VOICE-OPTIMIZED RESPONSE RULES:**
-          
-          1. **Be Conversational:**
-             - Use contractions: "we're" not "we are", "it's" not "it is"
-             - Avoid bullet points and lists in speech
-             - Use natural transitions: "So...", "Well...", "Actually..."
-          
-          2. **Keep It Concise:**
-             - 2-3 sentences max per response for simple questions
-             - For technical explanations (like RAG), you can go 3-4 sentences
-             - One idea at a time
-          
-          3. **Redirect Gracefully:**
-             For TRULY off-topic questions (weather, news, etc.), stay warm but firm:
-             "I focus on Techjays company info, but I'd love to tell you about our AI solutions. What interests you?"
-          
-          4. **Confirm When Unsure:**
-             If you're not 100% sure what they asked: "Just to make sure I heard you right - you're asking about [X]?"
-          
-          5. **Explain Technical Terms Naturally:**
-             When explaining AI concepts, start with simple definition, connect to Techjays' implementation, and offer real use case example.
-          
-          **VOICE DELIVERY:**
-          - Speak like you're having a coffee chat with a potential client
-          - Use emphasis naturally
-          - End with engagement questions
-          
-          **MANDATORY PROTOCOL:**
-          1. ALWAYS call search_techjays_knowledge for any question that could relate to Techjays services (including AI tech explanations)
-          2. NEVER make up information - search first
-          3. If search returns nothing relevant, say: "Let me connect you with our team at info@techjays.com"
-          4. Keep responses under 25 seconds of speech time
-          
-          **WHEN IN DOUBT:** If someone asks about an AI/tech concept, assume it's relevant to Techjays and search for how we implement it. We're an AI company - almost all AI questions are Techjays questions!
-          
-          Remember: You're the voice of Techjays. Be helpful, accurate, and genuinely interested in helping users learn about what makes Techjays special.`,
+            instructions: `You are Teja, the voice AI assistant for Techjays, a custom software and AI solutions company.
+
+            **CORE IDENTITY:**
+            Friendly, knowledgeable company representative. Conversational and helpful.
+            
+            **GREETING (First Message Only):**
+            "Hi! I'm Teja from Techjays. How can I help you today?"
+            
+            **TRANSCRIPTION AUTO-CORRECT:**
+            Silently fix: "Texas"→Techjays, "Philip Samuel"→Philip Samuelraj, "Jaso/Jesse"→Jesso Clarence, "Dharma Raj"→Dharmaraj
+            
+            **CRITICAL: STRICT RAG-ONLY PROTOCOL**
+
+            **Static Information:**
+            -- Founded in July 9, 2020
+            
+            You have NO general knowledge about Techjays. You can ONLY answer using information retrieved from the search_techjays_knowledge function.
+            
+            **MANDATORY PROCESS FOR EVERY TECHJAYS QUESTION:**
+            
+            1. **ALWAYS call search_techjays_knowledge FIRST** - No exceptions
+            2. **WAIT for search results**
+            3. **Check if results contain the specific answer:**
+               - ✅ Results have the exact info → Answer using ONLY that information
+               - ⚠️ Results are vague/partial → Say: "Based on our knowledge base, [partial answer]. For complete details, contact info@techjays.com"
+               - ❌ Results don't answer the question → Say: "I don't have that specific information. Please contact info@techjays.com"
+            
+            **FORBIDDEN BEHAVIORS:**
+            - ❌ Never answer from general knowledge about companies, AI, or software
+            - ❌ Never assume information not explicitly stated in search results
+            - ❌ Never say "Techjays likely..." or "Typically companies..." - only state facts from search results
+            - ❌ Never combine search results with your general knowledge
+            - ❌ Never answer before searching
+            
+            **WHAT REQUIRES RAG SEARCH (Everything about Techjays):**
+            Company info, team members, services, technologies, projects, processes, contact details, pricing, partnerships, clients, locations, certifications, awards - literally ANY Techjays question.
+            
+            **WHAT DOESN'T REQUIRE RAG (Decline these):**
+            Weather, news, personal advice, entertainment, general knowledge unrelated to Techjays.
+            Response: "I focus on Techjays information. What would you like to know about our services?"
+            
+            **RESPONSE CONSTRUCTION RULES:**
+            
+            When you have search results:
+            1. Read ALL search result content carefully
+            2. Extract ONLY the specific facts that answer the question
+            3. Respond in natural, conversational language
+            4. DO NOT add context, explanations, or elaborations not present in results
+            5. If asked for details not in results, acknowledge: "I don't have those specific details"
+            
+            **VOICE-OPTIMIZED DELIVERY:**
+            - Conversational tone: "we're", "it's", natural flow
+            - Concise: 2-3 sentences for simple facts, 3-4 for complex topics
+            - Under 25 seconds of speech
+            - Natural transitions: "So...", "Well..."
+            
+            **QUALITY CHECK BEFORE RESPONDING:**
+            Ask yourself: "Did this exact information come from the search results?"
+            - If YES → Respond with that information
+            - If NO → Don't include it
+            - If UNSURE → Don't include it
+            
+            **Example Correct Behavior:**
+            
+            User: "Where is Techjays headquarters?"
+            → Search: "Techjays headquarters location address"
+            → Results contain: "101 Jefferson Drive Suite 212C, Menlo Park, CA 94025"
+            → Response: "We're headquartered at 101 Jefferson Drive Suite 212C, Menlo Park, California."
+            
+            User: "What's Techjays' annual revenue?"
+            → Search: "Techjays revenue annual financial"
+            → Results: [No revenue information found]
+            → Response: "I don't have that information. For business inquiries, contact our team at info@techjays.com"
+            
+            User: "Who is Arun M P?"
+            → Search: "Arun M P role position title"  
+            → Results contain: "Arun M P - Director of Engineering"
+            → Response: "Arun M P is our Director of Engineering."
+            
+            User: "What AI services do you offer?"
+            → Search: "AI services capabilities offerings"
+            → Results contain: [Detailed AI services list]
+            → Response: [Summarize ONLY what's in the results, nothing more]
+            
+            **REMEMBER:** 
+            - You're a search interface, not an AI expert
+            - Your knowledge = Search results only
+            - When unsure, admit it and offer to connect them with the team
+            - Better to say "I don't know" than to hallucinate
+            
+            You represent Techjays accurately by ONLY sharing verified information from our knowledge base.`,
             voice: "ash",
             input_audio_format: "pcm16",
             output_audio_format: "pcm16",
@@ -634,8 +677,8 @@ const interruptAgent = useCallback((reason = "user_action") => {
 
             turn_detection: {
               type: "server_vad",
-              threshold: 0.6,           // 🔧 More sensitive (lower = more sensitive)
-              prefix_padding_ms: 300,   // 🔧 Faster response
+              threshold: 0.6, // 🔧 More sensitive (lower = more sensitive)
+              prefix_padding_ms: 300, // 🔧 Faster response
               silence_duration_ms: 700, // 🔧 Shorter wait time
             },
             tools: [
@@ -671,7 +714,7 @@ const interruptAgent = useCallback((reason = "user_action") => {
         // ⭐ WELCOME MESSAGE - Only on initial connection, not reconnection
         if (isInitialConnectionRef.current) {
           isInitialConnectionRef.current = false;
-          
+
           // Small delay to ensure session configuration is processed
           setTimeout(() => {
             if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -705,7 +748,9 @@ const interruptAgent = useCallback((reason = "user_action") => {
           }, 500); // 500ms delay to ensure session is ready
         } else {
           // Reconnection - resume conversation without welcome
-          console.log(`[${instanceIdRef.current}] 🔄 Reconnected - resuming conversation`);
+          console.log(
+            `[${instanceIdRef.current}] 🔄 Reconnected - resuming conversation`
+          );
           updateVoiceState("listening");
         }
 
@@ -742,9 +787,13 @@ const interruptAgent = useCallback((reason = "user_action") => {
       // In connectWebSocket, update the onclose handler (around line 753)
       wsRef.current.onclose = (event) => {
         isConnectingRef.current = false;
-      
-        console.log(`[${instanceIdRef.current}] WebSocket closed. Code: ${event.code}, Reason: ${event.reason || 'none'}`);
-      
+
+        console.log(
+          `[${instanceIdRef.current}] WebSocket closed. Code: ${
+            event.code
+          }, Reason: ${event.reason || "none"}`
+        );
+
         // Code 1000 = normal closure (intentional)
         if (event.code === 1000) {
           wsRef.current = null;
@@ -752,68 +801,86 @@ const interruptAgent = useCallback((reason = "user_action") => {
           globalWebSocket = null;
           return;
         }
-      
+
         // ⭐ IMPROVED: More lenient handling of Code 1006
         // Check multiple conditions to determine if this is an "expected" interruption closure
-        const timeSinceLastInterrupt = Date.now() - lastInterruptTimeRef.current;
+        const timeSinceLastInterrupt =
+          Date.now() - lastInterruptTimeRef.current;
         const isRecentInterrupt = timeSinceLastInterrupt < 3000; // Increased to 3 seconds
         const wasProcessingResponse = isProcessingResponseRef.current;
-        
+
         // If Code 1006 happened during/after an interrupt, this is likely expected behavior
-        if (event.code === 1006 && (isRecentInterrupt || wasProcessingResponse)) {
-          console.log(`[${instanceIdRef.current}] ℹ️ Code 1006 after interrupt (${timeSinceLastInterrupt}ms ago, processing: ${wasProcessingResponse}) - treating as expected, will NOT reconnect`);
-          
+        if (
+          event.code === 1006 &&
+          (isRecentInterrupt || wasProcessingResponse)
+        ) {
+          console.log(
+            `[${instanceIdRef.current}] ℹ️ Code 1006 after interrupt (${timeSinceLastInterrupt}ms ago, processing: ${wasProcessingResponse}) - treating as expected, will NOT reconnect`
+          );
+
           // Reset flags but DON'T reconnect
           wsRef.current = null;
           globalConnectionActive = false;
           globalWebSocket = null;
           isProcessingResponseRef.current = false;
           isResponseDoneRef.current = true;
-          
+
           // Just update state to listening - user can continue with next request
           if (voiceStateRef.current !== "idle") {
             updateVoiceState("listening");
           }
-          
+
           // ⭐ CRITICAL: Restart the connection silently without user knowing
           // This maintains the session without showing errors
           setTimeout(() => {
-            console.log(`[${instanceIdRef.current}] 🔄 Silently re-establishing connection after interrupt...`);
+            console.log(
+              `[${instanceIdRef.current}] 🔄 Silently re-establishing connection after interrupt...`
+            );
             if (isActive && connectWebSocketRef.current && !wsRef.current) {
               connectWebSocketRef.current();
             }
           }, 500);
-          
+
           return; // Don't proceed with error reconnection logic
         }
-      
+
         // ⭐ PREVENT RACE CONDITION: Check if reconnection already in progress
         if (isReconnectingRef.current) {
-          console.log(`[${instanceIdRef.current}] Reconnection already in progress, skipping`);
+          console.log(
+            `[${instanceIdRef.current}] Reconnection already in progress, skipping`
+          );
           return;
         }
-      
+
         // Unexpected disconnect - attempt recovery
         if (isActive && voiceStateRef.current !== "idle") {
-          console.warn(`[${instanceIdRef.current}] Unexpected disconnect during active session (Code: ${event.code})`);
-          
+          console.warn(
+            `[${instanceIdRef.current}] Unexpected disconnect during active session (Code: ${event.code})`
+          );
+
           isReconnectingRef.current = true;
-          
+
           const attemptReconnect = () => {
-            console.log(`[${instanceIdRef.current}] Attempting automatic reconnection...`);
-            
+            console.log(
+              `[${instanceIdRef.current}] Attempting automatic reconnection...`
+            );
+
             wsRef.current = null;
             globalConnectionActive = false;
             globalWebSocket = null;
             isConnectingRef.current = false;
-            
+
             if (connectWebSocketRef.current) {
-              connectWebSocketRef.current()
+              connectWebSocketRef
+                .current()
                 .then(() => {
                   isReconnectingRef.current = false;
                 })
                 .catch((err) => {
-                  console.error(`[${instanceIdRef.current}] Auto-reconnect failed:`, err);
+                  console.error(
+                    `[${instanceIdRef.current}] Auto-reconnect failed:`,
+                    err
+                  );
                   isReconnectingRef.current = false;
                   setError("Connection lost. Please try again.");
                   updateVoiceState("idle");
@@ -822,7 +889,7 @@ const interruptAgent = useCallback((reason = "user_action") => {
               isReconnectingRef.current = false;
             }
           };
-      
+
           setTimeout(attemptReconnect, 500);
         } else {
           cleanup(false);
@@ -858,11 +925,13 @@ const interruptAgent = useCallback((reason = "user_action") => {
         case "input_audio_buffer.speech_started":
           // ⭐ Auto-interrupt when user starts speaking
           const wasInterrupted = interruptAgent("user_speech");
-          
+
           if (wasInterrupted) {
-            console.log(`[${instanceIdRef.current}] 🎤 User interrupted agent by speaking`);
+            console.log(
+              `[${instanceIdRef.current}] 🎤 User interrupted agent by speaking`
+            );
           }
-          
+
           // Update state to listening
           updateVoiceState("listening");
           currentTranscriptRef.current = "";
@@ -1098,32 +1167,32 @@ const interruptAgent = useCallback((reason = "user_action") => {
           });
           break;
 
-          case "error":
-            // Don't show error for cancel failures (response might already be done)
-            if (
-              message.error?.code === "response_cancel_not_active" ||
-              message.error?.message?.includes("no active response") ||
-              message.error?.message?.includes("cancel") // ⭐ ADD THIS
-            ) {
-              console.log(
-                `[${instanceIdRef.current}] ℹ️ Cancel ignored - response already completed`
-              );
-              // Reset state since response is done
-              isResponseDoneRef.current = true;
-              isProcessingResponseRef.current = false;
-              canSendAudioRef.current = true;
-              if (voiceStateRef.current === "speaking") {
-                updateVoiceState("listening");
-              }
-              // ⭐ DON'T SET ERROR - just log and continue
-              return; // ⭐ ADD RETURN to prevent error display
-            } else {
-              console.error("API Error:", message.error);
-              setError(message.error?.message || "An error occurred");
-              isProcessingResponseRef.current = false;
-              canSendAudioRef.current = true;
+        case "error":
+          // Don't show error for cancel failures (response might already be done)
+          if (
+            message.error?.code === "response_cancel_not_active" ||
+            message.error?.message?.includes("no active response") ||
+            message.error?.message?.includes("cancel") // ⭐ ADD THIS
+          ) {
+            console.log(
+              `[${instanceIdRef.current}] ℹ️ Cancel ignored - response already completed`
+            );
+            // Reset state since response is done
+            isResponseDoneRef.current = true;
+            isProcessingResponseRef.current = false;
+            canSendAudioRef.current = true;
+            if (voiceStateRef.current === "speaking") {
+              updateVoiceState("listening");
             }
-            break;
+            // ⭐ DON'T SET ERROR - just log and continue
+            return; // ⭐ ADD RETURN to prevent error display
+          } else {
+            console.error("API Error:", message.error);
+            setError(message.error?.message || "An error occurred");
+            isProcessingResponseRef.current = false;
+            canSendAudioRef.current = true;
+          }
+          break;
 
         default:
           // console.log("Unhandled message type:", message.type);
@@ -1332,7 +1401,7 @@ const interruptAgent = useCallback((reason = "user_action") => {
       processor.onaudioprocess = (e) => {
         // ⭐ ALWAYS send audio for server VAD to detect interruptions
         // Server-side VAD needs audio stream to detect when user starts speaking
-        
+
         // Use refs to check current state (avoid stale closures)
         if (
           wsRef.current?.readyState === WebSocket.OPEN &&
@@ -1414,12 +1483,17 @@ const interruptAgent = useCallback((reason = "user_action") => {
       try {
         await playAudioBuffer(audioData);
       } catch (error) {
-        console.error(`[${instanceIdRef.current}] Audio playback error:`, error);
+        console.error(
+          `[${instanceIdRef.current}] Audio playback error:`,
+          error
+        );
       }
 
       // Check for interruption after playing
       if (!isPlayingRef.current) {
-        console.log(`[${instanceIdRef.current}] Playback interrupted between chunks`);
+        console.log(
+          `[${instanceIdRef.current}] Playback interrupted between chunks`
+        );
         break;
       }
     }
@@ -1519,11 +1593,15 @@ const interruptAgent = useCallback((reason = "user_action") => {
   // ⭐ SIMPLIFIED handleInterrupt - uses centralized interruptAgent
   const handleInterrupt = useCallback(() => {
     const wasInterrupted = interruptAgent("button_click");
-    
+
     if (wasInterrupted) {
-      console.log(`[${instanceIdRef.current}] 👆 User interrupted agent via button`);
+      console.log(
+        `[${instanceIdRef.current}] 👆 User interrupted agent via button`
+      );
     } else {
-      console.log(`[${instanceIdRef.current}] ℹ️ No active response to interrupt`);
+      console.log(
+        `[${instanceIdRef.current}] ℹ️ No active response to interrupt`
+      );
     }
   }, [interruptAgent]);
 
