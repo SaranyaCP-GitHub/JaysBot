@@ -119,7 +119,7 @@ Relevant links:
             
             **MANDATORY PROCESS FOR EVERY TECHJAYS QUESTION:**
             1. **Check if the question is about static information, if it is, use the static information provided above. Don't call search_techjays_knowledge for CEO**
-            2. **ALWAYS call search_techjays_knowledge FIRST EXCEPT FOR STATIC INFORMATION.** 
+            2. **ALWAYS call search_techjays_knowledge FIRST EXCEPT FOR STATIC INFORMATION.** - No exceptions
             3. **WAIT for search results**
             4. **Check if results contain the specific answer:**
                - ✅ Results have the exact info → Answer using ONLY that information, for static information, use the static information provided above.
