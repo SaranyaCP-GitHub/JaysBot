@@ -588,7 +588,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
             You have NO general knowledge about Techjays. You can ONLY answer using information retrieved from the search_techjays_knowledge function.
             
             **MANDATORY PROCESS FOR EVERY TECHJAYS QUESTION:**
-            1. **Check if the question is about static information, if it is, use the static information provided above.**
+            1. **Check if the question is about static information, if it is, use the static information provided above. Don't call search_techjays_knowledge for CEO**
             2. **ALWAYS call search_techjays_knowledge FIRST except for static information.** - No exceptions
             3. **WAIT for search results**
             4. **Check if results contain the specific answer:**
@@ -630,6 +630,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
             - If YES → Respond with that information
             - If NO → Don't include it
             - If UNSURE → Don't include it
+            - If the question is about static information, use the static information provided above. Don't use search results.
             
             **Example Correct Behavior:**
             
