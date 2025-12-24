@@ -1,0 +1,210 @@
+/* Animation styles for AI Assistant components */
+
+@keyframes loadingDotBounce {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+.loading-dot-bounce {
+  animation: loadingDotBounce 1.4s ease-in-out infinite;
+}
+
+@keyframes fadeIn {
+  from { 
+    opacity: 0; 
+    transform: translateY(10px); 
+  }
+  to { 
+    opacity: 1; 
+    transform: translateY(0); 
+  }
+}
+.animate-fadeIn {
+  animation: fadeIn 0.3s ease-out;
+}
+
+@keyframes slideUp {
+  from { 
+    opacity: 0; 
+    transform: translateY(100%);
+  }
+  to { 
+    opacity: 1; 
+    transform: translateY(0);
+  }
+}
+.animate-slideUp {
+  animation: slideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes modalIn {
+  from { 
+    opacity: 0;
+  }
+  to { 
+    opacity: 1;
+  }
+}
+.animate-modalIn {
+  animation: modalIn 0.3s ease-out;
+}
+
+@keyframes micPulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(129, 140, 248, 0.8),
+                0 0 0 0 rgba(129, 140, 248, 0.6);
+  }
+  50% {
+    box-shadow: 0 0 0 12px rgba(129, 140, 248, 0.3),
+                0 0 0 20px rgba(129, 140, 248, 0.1);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(129, 140, 248, 0),
+                0 0 0 0 rgba(129, 140, 248, 0);
+  }
+}
+
+.mic-pulse {
+  animation: micPulse 1.2s ease-out infinite;
+  position: relative;
+}
+
+.mic-pulse::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(129, 140, 248, 0.3) 0%, transparent 70%);
+  animation: micPulseInner 1.2s ease-out infinite;
+  pointer-events: none;
+}
+
+@keyframes micPulseInner {
+  0% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 0.6;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(2.5);
+    opacity: 0;
+  }
+}
+
+@keyframes placeholderSlide {
+  0% {
+    transform: translateY(4px);
+    opacity: 0;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.animate-placeholderSlide {
+  animation: placeholderSlide 0.4s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+/* Voice mode specific animations */
+
+@keyframes voiceFadeIn {
+  from { 
+    opacity: 0; 
+    transform: scale(0.95); 
+  }
+  to { 
+    opacity: 1; 
+    transform: scale(1); 
+  }
+}
+.animate-voiceFadeIn {
+  animation: voiceFadeIn 0.2s ease-out;
+}
+
+@keyframes voicePulseInline {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.3;
+  }
+  50% {
+    transform: scale(1.15);
+    opacity: 0.5;
+  }
+}
+.animate-voicePulseInline {
+  animation: voicePulseInline 1.5s ease-in-out infinite;
+}
+
+@keyframes voiceOrbInline {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+}
+.animate-voiceOrbInline {
+  animation: voiceOrbInline 1.5s ease-in-out infinite;
+}
+
+@keyframes voiceSpeakingPulseInline {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.35;
+  }
+  50% {
+    transform: scale(1.2);
+    opacity: 0.5;
+  }
+}
+.animate-voiceSpeakingPulseInline {
+  animation: voiceSpeakingPulseInline 1s ease-in-out infinite;
+}
+
+@keyframes voiceSpeakingOrbInline {
+  0%, 100% {
+    transform: scale(1);
+  }
+  25% {
+    transform: scale(1.03);
+  }
+  50% {
+    transform: scale(1.06);
+  }
+  75% {
+    transform: scale(1.03);
+  }
+}
+.animate-voiceSpeakingOrbInline {
+  animation: voiceSpeakingOrbInline 0.8s ease-in-out infinite;
+}
+
+@keyframes voiceWaveAnimInline {
+  0%, 100% {
+    transform: scaleY(0.5);
+    opacity: 0.6;
+  }
+  50% {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+}
+
+@keyframes voiceBarAnimInline {
+  0%, 100% {
+    transform: scaleY(0.4);
+    opacity: 0.6;
+  }
+  50% {
+    transform: scaleY(1.2);
+    opacity: 1;
+  }
+}
+

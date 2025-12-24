@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { getSessionKey } from "../../services/sessionService";
+import { getSessionKey } from "@/services/sessionService";
 
 /**
  * Message type for chat history

@@ -2,8 +2,9 @@
  * Session service for managing chat session keys
  */
 
+import { CHAT_API_URL } from "@/constants/voiceConstants";
+
 const SESSION_STORAGE_KEY = "session_key";
-const CHAT_API_URL = "https://chat-api.techjays.com/api/v1/chat/";
 
 /**
  * Get or initialize a session key

@@ -1,6 +1,7 @@
 import React from "react";
 import { Sparkles, AudioLines, Send } from "lucide-react";
-import IconButton from "../../ui/atom/IconButton";
+
+import IconButton from "@/ui/atom/IconButton";
 
 interface SearchInputProps {
   value: string;

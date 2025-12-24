@@ -95,6 +95,7 @@ const IconButton: React.FC<IconButtonProps> = ({
       {...rest}
     >
       {renderedIcon}
+      {rest.children}
     </button>
   );
 };
