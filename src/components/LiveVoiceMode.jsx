@@ -403,32 +403,12 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
         `[${instanceIdRef.current}] 🛑 Interrupting agent (${reason})`
       );
 
-      // FIX: Clear typing indicator if AI was only processing (no text received yet)
+      // Note: We don't send empty messages to clear typing indicators
+      // The parent component should handle typing indicator state based on voiceState
       if (
         isProcessingResponseRef.current &&
-        currentAiTextRef.current.trim() === "" &&
-        onAddMessage
+        currentAiTextRef.current.trim() === ""
       ) {
-        // Clear typing indicator immediately
-        onAddMessage({
-          type: "ai",
-          text: "", // Empty text to update existing message
-          isVoice: true,
-          isTyping: false, // Explicitly set to false to clear
-          isStreaming: false, // Not streaming anymore
-        });
-        // Send a second update after a small delay to ensure it's cleared
-        setTimeout(() => {
-          if (onAddMessage) {
-            onAddMessage({
-              type: "ai",
-              text: "",
-              isVoice: true,
-              isTyping: false,
-              isStreaming: false,
-            });
-          }
-        }, 100);
         typingIndicatorClearedRef.current = true;
       }
 
@@ -977,36 +957,12 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
             "VAD: User started speaking. Interrupting AI but KEEPING buffer."
           );
 
-          // FIX: Clear typing indicator if AI was processing (no text yet, just thinking)
-          // This must happen BEFORE interruptAgent to ensure it's cleared
+          // Mark typing indicator as cleared if AI was processing but no text received yet
           if (
             isProcessingResponseRef.current &&
             currentAiTextRef.current.trim() === ""
           ) {
-            // AI was processing but no text received yet - clear the typing indicator immediately
-            if (onAddMessage) {
-              // Send update to clear typing - this will update the last AI message
-              onAddMessage({
-                type: "ai",
-                text: "", // Empty text - hook will update last AI message
-                isVoice: true,
-                isTyping: false, // Explicitly false to clear
-                isStreaming: false, // Not streaming
-              });
-              // Send a second update after a small delay to ensure it's cleared
-              setTimeout(() => {
-                if (onAddMessage) {
-                  onAddMessage({
-                    type: "ai",
-                    text: "",
-                    isVoice: true,
-                    isTyping: false,
-                    isStreaming: false,
-                  });
-                }
-              }, 100);
-              typingIndicatorClearedRef.current = true; // Mark as cleared to prevent re-adding
-            }
+            typingIndicatorClearedRef.current = true;
           }
 
           // FIX 1: If user interrupts, save the partial greeting/message to history
@@ -1076,32 +1032,10 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
                 isVoice: true,
               });
 
-              // ⭐ Show typing indicator immediately after user message appears
-              // Only add typing indicator if it wasn't just cleared (give it a moment)
-              // Reset the cleared flag for new conversation turn after a small delay
-              const wasJustCleared = typingIndicatorClearedRef.current;
-              if (wasJustCleared) {
-                // Wait a bit before adding new typing indicator to ensure old one is cleared
-                setTimeout(() => {
-                  typingIndicatorClearedRef.current = false;
-                  if (onAddMessage) {
-                    onAddMessage({
-                      type: "ai",
-                      text: "",
-                      isVoice: true,
-                      isTyping: true,
-                    });
-                  }
-                }, 150);
-              } else {
-                typingIndicatorClearedRef.current = false;
-                onAddMessage({
-                  type: "ai",
-                  text: "",
-                  isVoice: true,
-                  isTyping: true,
-                });
-              }
+              // Note: Typing indicators should be handled by the parent component
+              // based on voiceState, not by sending empty messages
+              // Reset the cleared flag for new conversation turn
+              typingIndicatorClearedRef.current = false;
             }
             // Only show chat once to prevent remounting and reconnection
             if (onShowChat && !hasShownChatRef.current) {
@@ -1341,31 +1275,11 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
             console.log(
               `[${instanceIdRef.current}] ℹ️ Cancel ignored - response already completed`
             );
-            // FIX: Clear typing indicator if response was canceled during processing
+            // Mark typing indicator as cleared if response was canceled during processing
             if (
               isProcessingResponseRef.current &&
-              currentAiTextRef.current.trim() === "" &&
-              onAddMessage
+              currentAiTextRef.current.trim() === ""
             ) {
-              onAddMessage({
-                type: "ai",
-                text: "", // Empty text to update existing message
-                isVoice: true,
-                isTyping: false, // Explicitly set to false to clear
-                isStreaming: false, // Not streaming anymore
-              });
-              // Send a second update to ensure it's cleared
-              setTimeout(() => {
-                if (onAddMessage) {
-                  onAddMessage({
-                    type: "ai",
-                    text: "",
-                    isVoice: true,
-                    isTyping: false,
-                    isStreaming: false,
-                  });
-                }
-              }, 50);
               typingIndicatorClearedRef.current = true;
             }
             // Reset state since response is done
@@ -1379,27 +1293,19 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
             return; // ⭐ ADD RETURN to prevent error display
           } else {
             console.error("API Error:", message.error);
-            // FIX: Clear typing indicator on error too
-            if (isProcessingResponseRef.current && onAddMessage) {
+            // Only send message if there's actual text content
+            const errorText = currentAiTextRef.current.trim();
+            if (isProcessingResponseRef.current && onAddMessage && errorText) {
               onAddMessage({
                 type: "ai",
-                text: currentAiTextRef.current.trim() || "", // Use any partial text or empty
+                text: errorText,
                 isVoice: true,
-                isTyping: false, // Explicitly set to false to clear
-                isStreaming: false, // Not streaming anymore
+                isTyping: false,
+                isStreaming: false,
               });
-              // Send a second update to ensure it's cleared
-              setTimeout(() => {
-                if (onAddMessage) {
-                  onAddMessage({
-                    type: "ai",
-                    text: currentAiTextRef.current.trim() || "",
-                    isVoice: true,
-                    isTyping: false,
-                    isStreaming: false,
-                  });
-                }
-              }, 50);
+            }
+            // Mark typing indicator as cleared if no text
+            if (isProcessingResponseRef.current && !errorText) {
               typingIndicatorClearedRef.current = true;
             }
             setError(message.error?.message || "An error occurred");
