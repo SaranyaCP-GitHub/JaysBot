@@ -1913,7 +1913,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
       case "listening":
         return transcript ? `"${transcript}"` : "Listening...";
       case "processing":
-        return "Searching knowledge base...";
+        return "Thinking...";
       case "speaking":
         return "Speaking...";
       default:
