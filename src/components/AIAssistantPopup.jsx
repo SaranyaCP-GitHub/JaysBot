@@ -139,7 +139,7 @@ const AIAssistantPopup = () => {
   }, [hasSearched, isHeroInputFocused]);
 
   return (
-    <div className="bg-transparent relative overflow-auto">
+    <div id="techjays-chatbot" className="bg-transparent relative overflow-auto">
       {/* LiveVoiceMode - rendered once, always present to prevent remounting */}
       {isLiveVoiceActive && (
         <div className="fixed bottom-0 left-0 right-0 z-[60] px-2 pb-2 sm:px-4 sm:pb-4">
