@@ -404,7 +404,11 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
       );
 
       // FIX: Clear typing indicator if AI was only processing (no text received yet)
-      if (isProcessingResponseRef.current && currentAiTextRef.current.trim() === "" && onAddMessage) {
+      if (
+        isProcessingResponseRef.current &&
+        currentAiTextRef.current.trim() === "" &&
+        onAddMessage
+      ) {
         onAddMessage({
           type: "ai",
           text: "", // Empty text to update existing message
@@ -772,7 +776,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
                   type: "response.create",
                 })
               );
-              
+
               hasGreetedRef.current = true;
               updateVoiceState("speaking"); // Set state to speaking for the greeting
             }
@@ -955,11 +959,17 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
 
         case "input_audio_buffer.speech_started":
           // ⭐ Auto-interrupt when user starts speaking
-          console.log("VAD: User started speaking. Interrupting AI but KEEPING buffer.");
-          
+          console.log(
+            "VAD: User started speaking. Interrupting AI but KEEPING buffer."
+          );
+
           // FIX: Clear typing indicator if AI was processing (no text yet, just thinking)
           // This must happen BEFORE interruptAgent to ensure it's cleared
-          if (isProcessingResponseRef.current && currentAiTextRef.current.trim() === "" && !typingIndicatorClearedRef.current) {
+          if (
+            isProcessingResponseRef.current &&
+            currentAiTextRef.current.trim() === "" &&
+            !typingIndicatorClearedRef.current
+          ) {
             // AI was processing but no text received yet - clear the typing indicator immediately
             if (onAddMessage) {
               // Send update to clear typing - this will update the last AI message
@@ -973,18 +983,21 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
               typingIndicatorClearedRef.current = true; // Mark as cleared to prevent re-adding
             }
           }
-          
+
           // FIX 1: If user interrupts, save the partial greeting/message to history
-          if (currentAiTextRef.current.trim() !== "" && !currentAiTextSavedRef.current) {
+          if (
+            currentAiTextRef.current.trim() !== "" &&
+            !currentAiTextSavedRef.current
+          ) {
             if (onAddMessage) {
-              onAddMessage({ 
-                type: 'ai', 
-                text: currentAiTextRef.current + "..." // Add ellipsis to show it was cut off
+              onAddMessage({
+                type: "ai",
+                text: currentAiTextRef.current + "...", // Add ellipsis to show it was cut off
               });
               currentAiTextSavedRef.current = true; // Mark as saved
             }
           }
-          
+
           // Pass 'true' to keepBuffer because the user is currently talking
           const wasInterrupted = interruptAgent("vad_speech", true);
 
@@ -995,9 +1008,9 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
           }
 
           // Reset buffers for the next turn
-          currentAiTextRef.current = ""; 
+          currentAiTextRef.current = "";
           setAiResponse("");
-          
+
           // Update state to listening
           updateVoiceState("listening");
           currentTranscriptRef.current = "";
@@ -1037,7 +1050,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
                 text: message.transcript,
                 isVoice: true,
               });
-              
+
               // ⭐ Show typing indicator immediately after user message appears
               // Reset the cleared flag for new conversation turn
               typingIndicatorClearedRef.current = false;
@@ -1076,7 +1089,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
             updateVoiceState("processing");
             // Clear any buffered audio to prevent echo processing
             clearInputAudioBuffer();
-            
+
             // ⭐ Typing indicator is already added after transcript, so we don't need to add it here
             // It will be replaced when the actual response starts streaming
           }
@@ -1084,13 +1097,14 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
 
         case "response.audio_transcript.delta":
           // FIX 1: Remove loader as soon as text starts arriving
-          if (voiceStateRef.current !== "speaking") updateVoiceState("speaking");
-          
+          if (voiceStateRef.current !== "speaking")
+            updateVoiceState("speaking");
+
           // FIX 1: Update the Ref so we always know what the AI has said so far
           if (message.delta) {
             currentAiTextRef.current += message.delta;
           }
-          
+
           // AI response text streaming
           const deltaResponseId = message.response_id || message.response?.id;
           // Only process if matches current response and hasn't been processed yet
@@ -1150,7 +1164,11 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
 
           // Final update to chat history (mark as not streaming)
           // Only add if not already saved (e.g., by interruption)
-          if (onAddMessage && transcriptText && !currentAiTextSavedRef.current) {
+          if (
+            onAddMessage &&
+            transcriptText &&
+            !currentAiTextSavedRef.current
+          ) {
             onAddMessage({
               type: "ai",
               text: transcriptText,
@@ -1169,8 +1187,9 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
 
         case "response.audio.delta":
           // FIX 1: Remove loader as soon as audio starts arriving
-          if (voiceStateRef.current !== "speaking") updateVoiceState("speaking");
-          
+          if (voiceStateRef.current !== "speaking")
+            updateVoiceState("speaking");
+
           // AI audio response
           const audioResponseId = message.response_id || message.response?.id;
           // Only process if matches current response
@@ -1242,9 +1261,9 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
           const finalText = currentAiTextRef.current.trim();
           if (finalText !== "" && !currentAiTextSavedRef.current) {
             if (onAddMessage) {
-              onAddMessage({ 
-                type: 'ai', 
-                text: finalText 
+              onAddMessage({
+                type: "ai",
+                text: finalText,
               });
             }
           }
@@ -1257,11 +1276,11 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
               // Only clear currentResponseIdRef, keep lastProcessedResponseIdRef to prevent duplicates
               currentResponseIdRef.current = null;
               canSendAudioRef.current = true; // Resume sending audio
-              
+
               // Clear for next turn
               currentAiTextRef.current = "";
               setAiResponse("");
-              
+
               // Use ref to check current state, not stale closure
               if (voiceStateRef.current !== "idle") {
                 updateVoiceState("listening");
@@ -1281,7 +1300,11 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
               `[${instanceIdRef.current}] ℹ️ Cancel ignored - response already completed`
             );
             // FIX: Clear typing indicator if response was canceled during processing
-            if (isProcessingResponseRef.current && currentAiTextRef.current.trim() === "" && onAddMessage) {
+            if (
+              isProcessingResponseRef.current &&
+              currentAiTextRef.current.trim() === "" &&
+              onAddMessage
+            ) {
               onAddMessage({
                 type: "ai",
                 text: "", // Empty text to update existing message
@@ -1970,7 +1993,8 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
       case "connecting":
         return "Connecting...";
       case "listening":
-        return transcript ? `"${transcript}"` : "Listening...";
+        // return transcript ? `"${transcript}"` : "Listening...";
+        return "Listening...";
       case "processing":
         return "Thinking...";
       case "speaking":
