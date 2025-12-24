@@ -32,6 +32,9 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
   const hasStartedRef = useRef(false);
   const currentTranscriptRef = useRef("");
   const currentAiResponseRef = useRef("");
+  const hasGreetedRef = useRef(false); // Track if greeting has been sent
+  const currentAiTextRef = useRef(""); // Keeps track of what the AI is saying RIGHT NOW
+  const currentAiTextSavedRef = useRef(false); // Track if current AI text was already saved (e.g., due to interruption)
 
   // Additional refs to prevent duplicate handling
   const voiceStateRef = useRef("idle"); // Track voice state for closures
@@ -568,7 +571,11 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
           type: "session.update",
           session: {
             modalities: ["text", "audio"],
+            // FIX 2: Enhanced Session Update to prevent hallucinations
             instructions: `You are Teja, the voice AI assistant for Techjays, a custom software and AI solutions company.
+
+            **CONTEXT AWARENESS:**
+            If the conversation has already started, do not greet again. Just listen and respond to the user's questions.
 
             **CORE IDENTITY:**
             Friendly, knowledgeable company representative. Conversational and helpful.
@@ -663,7 +670,12 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
             - When unsure, admit it and offer to connect them with the team
             - Better to say "I don't know" than to hallucinate
             
-            You represent Techjays accurately by ONLY sharing verified information from our knowledge base.`,
+            You represent Techjays accurately by ONLY sharing verified information from our knowledge base.
+            
+            **CRITICAL TRANSCRIPTION RULES:**
+            - If you hear silence or background noise, do not transcribe it
+            - Never output 'Thanks for watching' or 'Thank you' unless the user explicitly said it
+            - Only transcribe actual speech from the user`,
             voice: "ash",
             input_audio_format: "pcm16",
             output_audio_format: "pcm16",
@@ -676,11 +688,12 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
                 "Philip Samuelraj, Jesso Clarence, Dharmaraj, Agentic AI, RAG, MLOps, ChromaDB, Palantir, Techjays, CEO, Arun, Aparna",
             },
 
+            // FIX 2: Enhanced turn detection to filter out background hum
             turn_detection: {
               type: "server_vad",
-              threshold: 0.6, // 🔧 More sensitive (lower = more sensitive)
-              prefix_padding_ms: 300, // 🔧 Faster response
-              silence_duration_ms: 700, // 🔧 Shorter wait time
+              threshold: 0.6, // Increased threshold (default is 0.5) to filter out background hum
+              prefix_padding_ms: 300,
+              silence_duration_ms: 500,
             },
             tools: [
               {
@@ -712,14 +725,12 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
           onShowChat();
         }
 
-        // ⭐ WELCOME MESSAGE - Only on initial connection, not reconnection
-        if (isInitialConnectionRef.current) {
-          isInitialConnectionRef.current = false;
-
+        // FIX 2: Only greet if this is the very first time AND history is empty
+        if (!hasGreetedRef.current) {
           // Small delay to ensure session configuration is processed
           setTimeout(() => {
             if (wsRef.current?.readyState === WebSocket.OPEN) {
-              // Send greeting trigger
+              // Send greeting trigger using conversation.item.create approach (more reliable)
               wsRef.current.send(
                 JSON.stringify({
                   type: "conversation.item.create",
@@ -729,7 +740,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
                     content: [
                       {
                         type: "input_text",
-                        text: "Introduce yourself professionally as Teja, the AI assistant from Techjays, and ask how you can help today.",
+                        text: "Greet the user briefly: 'Hi I am Teja, How can I help you?'",
                       },
                     ],
                   },
@@ -742,9 +753,9 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
                   type: "response.create",
                 })
               );
-
-              // Set state to speaking for the welcome message
-              updateVoiceState("speaking");
+              
+              hasGreetedRef.current = true;
+              updateVoiceState("speaking"); // Set state to speaking for the greeting
             }
           }, 500); // 500ms delay to ensure session is ready
         } else {
@@ -926,6 +937,18 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
         case "input_audio_buffer.speech_started":
           // ⭐ Auto-interrupt when user starts speaking
           console.log("VAD: User started speaking. Interrupting AI but KEEPING buffer.");
+          
+          // FIX 1: If user interrupts, save the partial greeting/message to history
+          if (currentAiTextRef.current.trim() !== "" && !currentAiTextSavedRef.current) {
+            if (onAddMessage) {
+              onAddMessage({ 
+                type: 'ai', 
+                text: currentAiTextRef.current + "..." // Add ellipsis to show it was cut off
+              });
+              currentAiTextSavedRef.current = true; // Mark as saved
+            }
+          }
+          
           // Pass 'true' to keepBuffer because the user is currently talking
           const wasInterrupted = interruptAgent("vad_speech", true);
 
@@ -935,6 +958,10 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
             );
           }
 
+          // Reset buffers for the next turn
+          currentAiTextRef.current = ""; 
+          setAiResponse("");
+          
           // Update state to listening
           updateVoiceState("listening");
           currentTranscriptRef.current = "";
@@ -1003,8 +1030,11 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
             isProcessingResponseRef.current = true;
             isResponseDoneRef.current = false; // Mark response as active
             canSendAudioRef.current = false; // Stop sending audio while AI responds
-            // Set state to speaking immediately when AI starts responding
-            updateVoiceState("speaking");
+            // Reset text tracking for new response
+            currentAiTextRef.current = "";
+            currentAiTextSavedRef.current = false;
+            // FIX 1: Show loader initially, will be removed when audio/text starts arriving
+            updateVoiceState("processing");
             // Clear any buffered audio to prevent echo processing
             clearInputAudioBuffer();
             
@@ -1014,6 +1044,14 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
           break;
 
         case "response.audio_transcript.delta":
+          // FIX 1: Remove loader as soon as text starts arriving
+          if (voiceStateRef.current !== "speaking") updateVoiceState("speaking");
+          
+          // FIX 1: Update the Ref so we always know what the AI has said so far
+          if (message.delta) {
+            currentAiTextRef.current += message.delta;
+          }
+          
           // AI response text streaming
           const deltaResponseId = message.response_id || message.response?.id;
           // Only process if matches current response and hasn't been processed yet
@@ -1035,11 +1073,6 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
                 isStreaming: true, // Mark as streaming
                 isTyping: false, // Replace typing indicator
               });
-            }
-
-            // Set state to speaking when we start receiving response text
-            if (voiceStateRef.current !== "speaking") {
-              updateVoiceState("speaking");
             }
           } else if (
             deltaResponseId &&
@@ -1096,12 +1129,11 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
           break;
 
         case "response.audio.delta":
-          // AI audio response - set state to speaking when audio starts
+          // FIX 1: Remove loader as soon as audio starts arriving
+          if (voiceStateRef.current !== "speaking") updateVoiceState("speaking");
+          
+          // AI audio response
           const audioResponseId = message.response_id || message.response?.id;
-          // Set state to speaking immediately when we receive audio
-          if (message.delta && voiceStateRef.current !== "speaking") {
-            updateVoiceState("speaking");
-          }
           // Only process if matches current response
           if (
             message.delta &&
@@ -1167,6 +1199,17 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
           // Clear the input buffer to remove any echo that was captured
           clearInputAudioBuffer();
 
+          // FIX 1: Only add to history if it wasn't already added by an interruption
+          const finalText = currentAiTextRef.current.trim();
+          if (finalText !== "" && !currentAiTextSavedRef.current) {
+            if (onAddMessage) {
+              onAddMessage({ 
+                type: 'ai', 
+                text: finalText 
+              });
+            }
+          }
+
           // Wait for audio playback to finish before allowing new speech detection
           waitForAudioToFinish().then(() => {
             // Small delay after audio finishes to prevent echo/overlap
@@ -1175,10 +1218,14 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
               // Only clear currentResponseIdRef, keep lastProcessedResponseIdRef to prevent duplicates
               currentResponseIdRef.current = null;
               canSendAudioRef.current = true; // Resume sending audio
+              
+              // Clear for next turn
+              currentAiTextRef.current = "";
+              setAiResponse("");
+              
               // Use ref to check current state, not stale closure
               if (voiceStateRef.current !== "idle") {
                 updateVoiceState("listening");
-                setAiResponse("");
               }
             }, 300); // Small delay to let any echo subside
           });
