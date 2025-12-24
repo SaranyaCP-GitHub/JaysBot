@@ -35,6 +35,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
   const hasGreetedRef = useRef(false); // Track if greeting has been sent
   const currentAiTextRef = useRef(""); // Keeps track of what the AI is saying RIGHT NOW
   const currentAiTextSavedRef = useRef(false); // Track if current AI text was already saved (e.g., due to interruption)
+  const typingIndicatorClearedRef = useRef(false); // Track if typing indicator was cleared due to interruption
 
   // Additional refs to prevent duplicate handling
   const voiceStateRef = useRef("idle"); // Track voice state for closures
@@ -402,6 +403,17 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
         `[${instanceIdRef.current}] 🛑 Interrupting agent (${reason})`
       );
 
+      // FIX: Clear typing indicator if AI was only processing (no text received yet)
+      if (isProcessingResponseRef.current && currentAiTextRef.current.trim() === "" && onAddMessage) {
+        onAddMessage({
+          type: "ai",
+          text: "", // Empty text to update existing message
+          isVoice: true,
+          isTyping: false, // Explicitly set to false to clear
+          isStreaming: false, // Not streaming anymore
+        });
+      }
+
       // 1. Stop current audio source immediately
       if (currentAudioSourceRef.current) {
         try {
@@ -526,7 +538,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
 
       return true;
     },
-    [updateVoiceState]
+    [updateVoiceState, onAddMessage]
   );
 
   // Initialize WebSocket connection
@@ -594,6 +606,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
             -- Techjays CEO is Philip Samuelraj
             -- Techjays CTO is Jesso Clarence
             -- Tagline: "The best way to build your software."
+            -- Senior Leadership Team (SLT) includes: Philip Samuelraj, Jesso Clarence, Keerthi U S, Dharmaraj, Arun M P, Aparna Pillai
             
             You have NO general knowledge about Techjays. You can ONLY answer using information retrieved from the search_techjays_knowledge function.
             
@@ -944,6 +957,23 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
           // ⭐ Auto-interrupt when user starts speaking
           console.log("VAD: User started speaking. Interrupting AI but KEEPING buffer.");
           
+          // FIX: Clear typing indicator if AI was processing (no text yet, just thinking)
+          // This must happen BEFORE interruptAgent to ensure it's cleared
+          if (isProcessingResponseRef.current && currentAiTextRef.current.trim() === "" && !typingIndicatorClearedRef.current) {
+            // AI was processing but no text received yet - clear the typing indicator immediately
+            if (onAddMessage) {
+              // Send update to clear typing - this will update the last AI message
+              onAddMessage({
+                type: "ai",
+                text: "", // Empty text - hook will update last AI message
+                isVoice: true,
+                isTyping: false, // Explicitly false to clear
+                isStreaming: false, // Not streaming
+              });
+              typingIndicatorClearedRef.current = true; // Mark as cleared to prevent re-adding
+            }
+          }
+          
           // FIX 1: If user interrupts, save the partial greeting/message to history
           if (currentAiTextRef.current.trim() !== "" && !currentAiTextSavedRef.current) {
             if (onAddMessage) {
@@ -1009,6 +1039,8 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
               });
               
               // ⭐ Show typing indicator immediately after user message appears
+              // Reset the cleared flag for new conversation turn
+              typingIndicatorClearedRef.current = false;
               onAddMessage({
                 type: "ai",
                 text: "",
@@ -1039,6 +1071,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
             // Reset text tracking for new response
             currentAiTextRef.current = "";
             currentAiTextSavedRef.current = false;
+            typingIndicatorClearedRef.current = false; // Reset cleared flag for new response
             // FIX 1: Show loader initially, will be removed when audio/text starts arriving
             updateVoiceState("processing");
             // Clear any buffered audio to prevent echo processing
@@ -1247,6 +1280,16 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
             console.log(
               `[${instanceIdRef.current}] ℹ️ Cancel ignored - response already completed`
             );
+            // FIX: Clear typing indicator if response was canceled during processing
+            if (isProcessingResponseRef.current && currentAiTextRef.current.trim() === "" && onAddMessage) {
+              onAddMessage({
+                type: "ai",
+                text: "", // Empty text to update existing message
+                isVoice: true,
+                isTyping: false, // Explicitly set to false to clear
+                isStreaming: false, // Not streaming anymore
+              });
+            }
             // Reset state since response is done
             isResponseDoneRef.current = true;
             isProcessingResponseRef.current = false;
@@ -1258,6 +1301,16 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
             return; // ⭐ ADD RETURN to prevent error display
           } else {
             console.error("API Error:", message.error);
+            // FIX: Clear typing indicator on error too
+            if (isProcessingResponseRef.current && onAddMessage) {
+              onAddMessage({
+                type: "ai",
+                text: currentAiTextRef.current.trim() || "", // Use any partial text or empty
+                isVoice: true,
+                isTyping: false, // Explicitly set to false to clear
+                isStreaming: false, // Not streaming anymore
+              });
+            }
             setError(message.error?.message || "An error occurred");
             isProcessingResponseRef.current = false;
             canSendAudioRef.current = true;
