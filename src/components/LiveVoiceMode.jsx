@@ -409,6 +409,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
         currentAiTextRef.current.trim() === "" &&
         onAddMessage
       ) {
+        // Clear typing indicator immediately
         onAddMessage({
           type: "ai",
           text: "", // Empty text to update existing message
@@ -416,6 +417,19 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
           isTyping: false, // Explicitly set to false to clear
           isStreaming: false, // Not streaming anymore
         });
+        // Send a second update after a small delay to ensure it's cleared
+        setTimeout(() => {
+          if (onAddMessage) {
+            onAddMessage({
+              type: "ai",
+              text: "",
+              isVoice: true,
+              isTyping: false,
+              isStreaming: false,
+            });
+          }
+        }, 100);
+        typingIndicatorClearedRef.current = true;
       }
 
       // 1. Stop current audio source immediately
@@ -967,8 +981,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
           // This must happen BEFORE interruptAgent to ensure it's cleared
           if (
             isProcessingResponseRef.current &&
-            currentAiTextRef.current.trim() === "" &&
-            !typingIndicatorClearedRef.current
+            currentAiTextRef.current.trim() === ""
           ) {
             // AI was processing but no text received yet - clear the typing indicator immediately
             if (onAddMessage) {
@@ -980,6 +993,18 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
                 isTyping: false, // Explicitly false to clear
                 isStreaming: false, // Not streaming
               });
+              // Send a second update after a small delay to ensure it's cleared
+              setTimeout(() => {
+                if (onAddMessage) {
+                  onAddMessage({
+                    type: "ai",
+                    text: "",
+                    isVoice: true,
+                    isTyping: false,
+                    isStreaming: false,
+                  });
+                }
+              }, 100);
               typingIndicatorClearedRef.current = true; // Mark as cleared to prevent re-adding
             }
           }
@@ -1052,14 +1077,31 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
               });
 
               // ⭐ Show typing indicator immediately after user message appears
-              // Reset the cleared flag for new conversation turn
-              typingIndicatorClearedRef.current = false;
-              onAddMessage({
-                type: "ai",
-                text: "",
-                isVoice: true,
-                isTyping: true,
-              });
+              // Only add typing indicator if it wasn't just cleared (give it a moment)
+              // Reset the cleared flag for new conversation turn after a small delay
+              const wasJustCleared = typingIndicatorClearedRef.current;
+              if (wasJustCleared) {
+                // Wait a bit before adding new typing indicator to ensure old one is cleared
+                setTimeout(() => {
+                  typingIndicatorClearedRef.current = false;
+                  if (onAddMessage) {
+                    onAddMessage({
+                      type: "ai",
+                      text: "",
+                      isVoice: true,
+                      isTyping: true,
+                    });
+                  }
+                }, 150);
+              } else {
+                typingIndicatorClearedRef.current = false;
+                onAddMessage({
+                  type: "ai",
+                  text: "",
+                  isVoice: true,
+                  isTyping: true,
+                });
+              }
             }
             // Only show chat once to prevent remounting and reconnection
             if (onShowChat && !hasShownChatRef.current) {
@@ -1312,6 +1354,19 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
                 isTyping: false, // Explicitly set to false to clear
                 isStreaming: false, // Not streaming anymore
               });
+              // Send a second update to ensure it's cleared
+              setTimeout(() => {
+                if (onAddMessage) {
+                  onAddMessage({
+                    type: "ai",
+                    text: "",
+                    isVoice: true,
+                    isTyping: false,
+                    isStreaming: false,
+                  });
+                }
+              }, 50);
+              typingIndicatorClearedRef.current = true;
             }
             // Reset state since response is done
             isResponseDoneRef.current = true;
@@ -1333,6 +1388,19 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
                 isTyping: false, // Explicitly set to false to clear
                 isStreaming: false, // Not streaming anymore
               });
+              // Send a second update to ensure it's cleared
+              setTimeout(() => {
+                if (onAddMessage) {
+                  onAddMessage({
+                    type: "ai",
+                    text: currentAiTextRef.current.trim() || "",
+                    isVoice: true,
+                    isTyping: false,
+                    isStreaming: false,
+                  });
+                }
+              }, 50);
+              typingIndicatorClearedRef.current = true;
             }
             setError(message.error?.message || "An error occurred");
             isProcessingResponseRef.current = false;
