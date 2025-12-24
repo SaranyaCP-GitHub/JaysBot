@@ -598,8 +598,8 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
             You have NO general knowledge about Techjays. You can ONLY answer using information retrieved from the search_techjays_knowledge function.
             
             **MANDATORY PROCESS FOR EVERY TECHJAYS QUESTION:**
-            1. **Check if the question is about static information, if it is, use the static information provided above. Don't call search_techjays_knowledge for CEO**
-            2. **ALWAYS call search_techjays_knowledge FIRST EXCEPT FOR STATIC INFORMATION.** - No exceptions
+            1. **FIRST: Check if the question is about static information (CEO, CTO, founder, founding date, tagline). If it is, use the static information provided above. DO NOT call search_techjays_knowledge for static information.**
+            2. **ONLY if NOT static information: ALWAYS call search_techjays_knowledge FIRST.** - No exceptions
             3. **WAIT for search results**
             4. **Check if results contain the specific answer:**
                - ✅ Results have the exact info → Answer using ONLY that information, for static information, use the static information provided above.
@@ -659,6 +659,11 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
             → Search: "Arun M P role position title"  
             → Results contain: "Arun M P - Director of Engineering"
             → Response: "Arun M P is our Director of Engineering."
+            
+            User: "What is your tagline?" or "What's Techjays tagline?"
+            → Static information: Tagline is "The best way to build your software."
+            → Response: "Our tagline is: The best way to build your software."
+            → DO NOT call search_techjays_knowledge for tagline
             
             User: "What AI services do you offer?"
             → Search: "AI services capabilities offerings"
@@ -1073,6 +1078,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
                 isVoice: true,
                 isStreaming: true, // Mark as streaming
                 isTyping: false, // Replace typing indicator
+                replaceTyping: true, // Explicitly replace any typing indicators
               });
             }
           } else if (
@@ -1097,36 +1103,35 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
             return;
           }
 
-          // Check if we have text to add
-          if (
-            !currentAiResponseRef.current ||
-            currentAiResponseRef.current.trim() === ""
-          ) {
+          // Check if we have text to add - use currentAiTextRef for consistency
+          const transcriptText = currentAiTextRef.current.trim();
+          if (!transcriptText) {
             currentAiResponseRef.current = "";
             return;
           }
-
-          // Store the response text before clearing
-          const responseText = currentAiResponseRef.current;
 
           // Mark as processed BEFORE adding to prevent race conditions
           if (responseId) {
             lastProcessedResponseIdRef.current = responseId;
           }
 
-          // Clear the response text first
-          currentAiResponseRef.current = "";
-
           // Final update to chat history (mark as not streaming)
-          if (onAddMessage && responseText && responseText.trim() !== "") {
+          // Only add if not already saved (e.g., by interruption)
+          if (onAddMessage && transcriptText && !currentAiTextSavedRef.current) {
             onAddMessage({
               type: "ai",
-              text: responseText,
+              text: transcriptText,
               isVoice: true,
               isStreaming: false, // Mark as complete
               isTyping: false, // Ensure typing indicator is removed
+              replaceTyping: true, // Explicitly replace any typing indicators
             });
+            // Mark as saved to prevent duplicate in response.done
+            currentAiTextSavedRef.current = true;
           }
+
+          // Clear the response text refs (but keep currentAiTextRef for response.done check)
+          currentAiResponseRef.current = "";
           break;
 
         case "response.audio.delta":
