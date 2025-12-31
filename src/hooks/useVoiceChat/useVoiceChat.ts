@@ -63,18 +63,21 @@ const useVoiceChat = (params: UseVoiceChatParams): UseVoiceChatReturn => {
   const addVoiceMessage = useCallback(
     (message: ChatMessage) => {
       setChatHistory((prev) => {
-        // If it's an AI message and the last message is also an AI message (streaming update)
-        if (
+        const lastMessage = prev.length > 0 ? prev[prev.length - 1] : null;
+        
+        // ⭐ CRITICAL FIX: Only update/replace if BOTH are AI messages AND BOTH are voice messages
+        // This prevents voice greetings from overwriting text chat responses
+        const shouldUpdateLastMessage = 
           message.type === "ai" &&
-          prev.length > 0 &&
-          prev[prev.length - 1].type === "ai"
-        ) {
-          // Update the last message instead of adding a new one (for streaming)
+          lastMessage?.type === "ai" &&
+          lastMessage?.isVoice === true && // Last message must be a voice message
+          message.isVoice === true; // New message must also be a voice message
+        
+        if (shouldUpdateLastMessage && lastMessage) {
+          // Update the last voice message instead of adding a new one (for streaming)
           const updated = [...prev];
-          const lastMessage = updated[updated.length - 1];
           
-          // ⭐ FIX: Prevent empty text from overwriting existing content
-          // Only update text if the new message has actual content, OR if it's longer than existing
+          // Prevent empty text from overwriting existing content
           const newTextHasContent = message.text?.trim();
           const lastTextHasContent = lastMessage.text?.trim();
           
@@ -89,7 +92,7 @@ const useVoiceChat = (params: UseVoiceChatParams): UseVoiceChatReturn => {
           updated[updated.length - 1] = {
             ...lastMessage,
             text: protectedText,
-            isVoice: message.isVoice || lastMessage.isVoice,
+            isVoice: true,
             isStreaming: message.isStreaming !== false, // Default to true unless explicitly false
             isTyping: shouldBeTyping, // Only true if explicitly set AND no text
           };
@@ -101,7 +104,7 @@ const useVoiceChat = (params: UseVoiceChatParams): UseVoiceChatReturn => {
           return prev; // Return unchanged - don't add empty AI message
         }
         
-        // Otherwise, add as a new message
+        // Otherwise, add as a new message (this preserves text chat messages!)
         return [
           ...prev,
           { 
