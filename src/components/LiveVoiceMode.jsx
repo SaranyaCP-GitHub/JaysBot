@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import LoadingDots from "../ui/atom/LoadingDots";
 import { Mic, MicOff, PhoneOff } from "lucide-react";
 
 // Module-level connection tracker - persists across component remounts
@@ -54,6 +55,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
   const hasShownChatRef = useRef(false); // Track if chat has been shown to prevent duplicate calls
   const isResponseDoneRef = useRef(false); // Track if response is already done (to prevent canceling completed responses)
   const currentAudioSourceRef = useRef(null); // Track current playing audio source
+  const interruptedResponseIdRef = useRef(null); // Track the response ID that was interrupted to ignore late updates
   const isInitialConnectionRef = useRef(true); // Track if this is the first connection (for welcome message)
   const isReconnectingRef = useRef(false); // Prevent multiple simultaneous reconnection attempts
   const [fatalError, setFatalError] = useState(null); // Fatal error state for error recovery
@@ -122,7 +124,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
     // Create new session key
     try {
       const response = await fetch(
-        "https://chat-api.techjays.com/api/v1/chat/",
+        "https://chat-api.techjays.com/api/v1/gemini-chat/",
         {
           method: "GET",
         }
@@ -158,6 +160,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
         let result;
 
         if (functionName === "search_techjays_knowledge") {
+          updateVoiceState("processing");
           // Get or create session key
           const currentSessionKey = await getOrCreateSessionKey();
 
@@ -167,7 +170,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
 
           // Call your RAG API
           const response = await fetch(
-            "https://chat-api.techjays.com/api/v1/chat/",
+            "https://chat-api.techjays.com/api/v1/gemini-chat/",
             {
               method: "POST",
               headers: {
@@ -183,6 +186,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
           if (!response.ok) {
             throw new Error("Failed to fetch from knowledge base");
           }
+          updateVoiceState("processing");
 
           const data = await response.json();
 
@@ -855,7 +859,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
           isResponseDoneRef.current = true;
 
           // Just update state to listening - user can continue with next request
-          if (voiceStateRef.current !== "idle") {
+          if (voiceStateRef.current !== "idle"&& voiceStateRef.current !== "processing") {
             updateVoiceState("listening");
           }
 
@@ -957,6 +961,15 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
             "VAD: User started speaking. Interrupting AI but KEEPING buffer."
           );
 
+          // ⭐ CRITICAL FIX: Save the interrupted response ID BEFORE any other operations
+          // This prevents late streaming updates from overwriting saved messages
+          if (currentResponseIdRef.current) {
+            interruptedResponseIdRef.current = currentResponseIdRef.current;
+            console.log(
+              `[${instanceIdRef.current}] 📌 Marked response ${currentResponseIdRef.current} as interrupted`
+            );
+          }
+
           // Mark typing indicator as cleared if AI was processing but no text received yet
           if (
             isProcessingResponseRef.current &&
@@ -974,6 +987,8 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
               onAddMessage({
                 type: "ai",
                 text: currentAiTextRef.current + "...", // Add ellipsis to show it was cut off
+                isVoice: true,
+                isStreaming: false, // Mark as complete since it was interrupted
               });
               currentAiTextSavedRef.current = true; // Mark as saved
             }
@@ -1053,6 +1068,16 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
             if (newResponseId === currentResponseIdRef.current) {
               return;
             }
+            
+            // ⭐ Clear the interrupted response ID when a NEW response starts
+            // This ensures we don't accidentally block legitimate new responses
+            if (interruptedResponseIdRef.current && interruptedResponseIdRef.current !== newResponseId) {
+              console.log(
+                `[${instanceIdRef.current}] 🔄 New response started, clearing interrupted flag for ${interruptedResponseIdRef.current}`
+              );
+              interruptedResponseIdRef.current = null;
+            }
+            
             currentResponseIdRef.current = newResponseId;
             isProcessingResponseRef.current = true;
             isResponseDoneRef.current = false; // Mark response as active
@@ -1072,6 +1097,18 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
           break;
 
         case "response.audio_transcript.delta":
+          // AI response text streaming
+          const deltaResponseId = message.response_id || message.response?.id;
+          
+          // ⭐ CRITICAL FIX: Ignore late streaming updates from interrupted responses
+          // This prevents overwriting saved partial messages after user interrupts
+          if (deltaResponseId && deltaResponseId === interruptedResponseIdRef.current) {
+            console.log(
+              `[${instanceIdRef.current}] ⏭️ Ignoring late delta from interrupted response ${deltaResponseId}`
+            );
+            return; // Don't process this delta - it's from an interrupted response
+          }
+          
           // FIX 1: Remove loader as soon as text starts arriving
           if (voiceStateRef.current !== "speaking")
             updateVoiceState("speaking");
@@ -1081,8 +1118,6 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
             currentAiTextRef.current += message.delta;
           }
 
-          // AI response text streaming
-          const deltaResponseId = message.response_id || message.response?.id;
           // Only process if matches current response and hasn't been processed yet
           if (
             message.delta &&
@@ -1115,6 +1150,14 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
         case "response.audio_transcript.done":
           // AI response complete - only process if matches current response and not already processed
           const responseId = message.response_id || message.response?.id;
+
+          // ⭐ CRITICAL FIX: Ignore done events from interrupted responses
+          if (responseId && responseId === interruptedResponseIdRef.current) {
+            console.log(
+              `[${instanceIdRef.current}] ⏭️ Ignoring done event from interrupted response ${responseId}`
+            );
+            return;
+          }
 
           // Check if this response was already processed
           if (responseId && responseId === lastProcessedResponseIdRef.current) {
@@ -1185,9 +1228,9 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
           break;
 
         case "response.function_call_arguments.delta":
-          // Function arguments streaming (optional - for showing progress)
-          // Optionally update UI to show "Searching knowledge base..."
-          if (message.name === "search_techjays_knowledge") {
+          // Function call started - arguments are streaming
+          // Set state to "processing" (Thinking...) as soon as function call begins
+          if (voiceStateRef.current !== "processing") {
             updateVoiceState("processing");
           }
           break;
@@ -1258,7 +1301,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
               setAiResponse("");
 
               // Use ref to check current state, not stale closure
-              if (voiceStateRef.current !== "idle") {
+              if (voiceStateRef.current !== "idle" && voiceStateRef.current !== "processing") {
                 updateVoiceState("listening");
               }
             }, 300); // Small delay to let any echo subside
@@ -1288,6 +1331,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
             canSendAudioRef.current = true;
             if (voiceStateRef.current === "speaking") {
               updateVoiceState("listening");
+              console.log("Listening 3");
             }
             // ⭐ DON'T SET ERROR - just log and continue
             return; // ⭐ ADD RETURN to prevent error display

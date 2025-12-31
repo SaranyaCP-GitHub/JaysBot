@@ -3,7 +3,7 @@
  */
 
 const SESSION_STORAGE_KEY = "session_key";
-const CHAT_API_URL = "https://chat-api.techjays.com/api/v1/chat/";
+const CHAT_API_URL = "https://chat-api.techjays.com/api/v1/gemini-chat/";
 
 /**
  * Get or initialize a session key

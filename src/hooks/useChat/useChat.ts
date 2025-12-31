@@ -16,11 +16,13 @@ export interface ChatMessage {
  */
 interface ChatApiResponse {
   result: boolean;
+  session_key?: string;
   response: {
     text: string;
-    links?: string[];
+    links?: string[] | null;
+    grounded?: boolean;
+    source?: string;
   };
-  session_key?: string;
 }
 
 /**
@@ -50,7 +52,7 @@ export interface UseChatReturn {
   handleSearch: () => Promise<void>;
 }
 
-const CHAT_API_URL = "https://chat-api.techjays.com/api/v1/chat/";
+const CHAT_API_URL = "https://chat-api.techjays.com/api/v1/gemini-chat/";
 
 /**
  * Custom hook for managing chat/search functionality

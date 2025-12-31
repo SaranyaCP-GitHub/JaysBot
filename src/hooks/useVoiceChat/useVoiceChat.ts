@@ -73,26 +73,41 @@ const useVoiceChat = (params: UseVoiceChatParams): UseVoiceChatReturn => {
           const updated = [...prev];
           const lastMessage = updated[updated.length - 1];
           
-          // ⭐ FIX: If message has text, isTyping should be false
-          // If isTyping is explicitly provided, use it; otherwise default to false (don't preserve old value)
-          const shouldBeTyping = message.isTyping === true && !message.text?.trim();
+          // ⭐ FIX: Prevent empty text from overwriting existing content
+          // Only update text if the new message has actual content, OR if it's longer than existing
+          const newTextHasContent = message.text?.trim();
+          const lastTextHasContent = lastMessage.text?.trim();
+          
+          // Protect against empty overwrites: keep existing text if new text is empty but old has content
+          const protectedText = newTextHasContent 
+            ? message.text 
+            : (lastTextHasContent ? lastMessage.text : message.text);
+          
+          // If message has text, isTyping should be false
+          const shouldBeTyping = message.isTyping === true && !newTextHasContent;
           
           updated[updated.length - 1] = {
             ...lastMessage,
-            text: message.text,
+            text: protectedText,
             isVoice: message.isVoice || lastMessage.isVoice,
             isStreaming: message.isStreaming !== false, // Default to true unless explicitly false
             isTyping: shouldBeTyping, // Only true if explicitly set AND no text
           };
           return updated;
         }
+        
+        // Don't add empty AI messages - this prevents phantom empty messages
+        if (message.type === "ai" && !message.text?.trim()) {
+          return prev; // Return unchanged - don't add empty AI message
+        }
+        
         // Otherwise, add as a new message
         return [
           ...prev,
           { 
             ...message, 
             isStreaming: message.isStreaming !== false,
-            // ⭐ FIX: Only set isTyping to true if explicitly set AND no text
+            // Only set isTyping to true if explicitly set AND no text
             isTyping: message.isTyping === true && !message.text?.trim(),
           },
         ];
