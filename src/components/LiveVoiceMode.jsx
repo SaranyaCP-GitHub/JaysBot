@@ -636,7 +636,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
             - ❌ Never say Jake Dawson is the CEO of Techjays
             
             **WHAT REQUIRES RAG SEARCH (Everything except weather, news, personal advice, entertainment):**
-            Company info, team members, services, technologies, projects, processes, contact details, pricing, partnerships, clients, locations, certifications, cookies, terms of service, privacy policy, awards - literally ANY Techjays question.
+            Company info, team members, services, technologies, projects, processes, contact details, pricing, partnerships, clients, locations, certifications, cookies, terms of service, privacy policy, awards, clients (Cloud9, Sony PlayStation, Orbcomm, ArkoseLabs, University of Alberta, American Museum of Natural History, Midalloy, KaizenHealth, Pepcare, Aquacycl, Hawx, Decerna, Bracketology, Via Analytics, We Hear You, Push, SpreeTail, NSR, Vortex, Accoes, Fayvit, and Shipdude) - literally ANY Techjays question.
             
             
             **RESPONSE CONSTRUCTION RULES:**
@@ -705,7 +705,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
               model: "whisper-1",
               language: "en",
               prompt:
-                "Philip Samuelraj, Jesso Clarence, Dharmaraj, Agentic AI, RAG, MLOps, ChromaDB, Palantir, Techjays, CEO, Arun, Aparna, DSPy",
+                "Philip Samuelraj, Jesso Clarence, Dharmaraj, Agentic AI, RAG, MLOps, ChromaDB, Palantir, Techjays, CEO, Arun, Aparna, DSPy, Bracketology, Via Analytics, SpreeTail, NSR, Vortex, Accoes, Fayvit, and Shipdude",
             },
 
             // FIX 2: Enhanced turn detection to filter out background hum
