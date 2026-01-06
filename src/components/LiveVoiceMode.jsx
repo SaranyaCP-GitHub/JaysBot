@@ -665,10 +665,6 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
             → Results contain: "101 Jefferson Drive Suite 212C, Menlo Park, CA 94025"
             → Response: "We're headquartered at 101 Jefferson Drive Suite 212C, Menlo Park, California."
             
-            User: "What's Techjays' annual revenue?"
-            → Search: "Techjays revenue annual financial"
-            → Results: [No revenue information found]
-            → Response: "I don't have that information. For business inquiries, contact our team at info@techjays.com"
             
             User: "Who is Arun M P?"
             → Search: "Arun M P role position title"  
