@@ -65,13 +65,16 @@ const useVoiceChat = (params: UseVoiceChatParams): UseVoiceChatReturn => {
       setChatHistory((prev) => {
         const lastMessage = prev.length > 0 ? prev[prev.length - 1] : null;
         
-        // ⭐ CRITICAL FIX: Only update/replace if BOTH are AI messages AND BOTH are voice messages
-        // This prevents voice greetings from overwriting text chat responses
+        // ⭐ CRITICAL FIX: Only update if BOTH are AI voice messages AND last message is still streaming
+        // If last message is completed (isStreaming: false), we should ADD a new message, not update
+        const lastMessageIsStreaming = lastMessage?.isStreaming !== false;
+        
         const shouldUpdateLastMessage = 
           message.type === "ai" &&
           lastMessage?.type === "ai" &&
           lastMessage?.isVoice === true && // Last message must be a voice message
-          message.isVoice === true; // New message must also be a voice message
+          message.isVoice === true && // New message must also be a voice message
+          lastMessageIsStreaming; // ⭐ KEY FIX: Only update if last message is still streaming
         
         if (shouldUpdateLastMessage && lastMessage) {
           // Update the last voice message instead of adding a new one (for streaming)
@@ -104,7 +107,7 @@ const useVoiceChat = (params: UseVoiceChatParams): UseVoiceChatReturn => {
           return prev; // Return unchanged - don't add empty AI message
         }
         
-        // Otherwise, add as a new message (this preserves text chat messages!)
+        // Otherwise, add as a new message (this preserves completed messages!)
         return [
           ...prev,
           { 
