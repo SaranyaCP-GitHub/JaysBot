@@ -629,11 +629,11 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
             - ❌ Never answer before searching
             - ❌ Never say Jake Dawson is the CEO of Techjays
             
-            **WHAT REQUIRES RAG SEARCH (Everything about Techjays):**
+            **WHAT REQUIRES RAG SEARCH (Everything except weather, news, personal advice, entertainment):**
             Company info, team members, services, technologies, projects, processes, contact details, pricing, partnerships, clients, locations, certifications, awards - literally ANY Techjays question.
             
             **WHAT DOESN'T REQUIRE RAG (Decline these):**
-            Weather, news, personal advice, entertainment, general knowledge unrelated to computer technology.
+            Weather, news, personal advice, entertainment.
             Response: "I focus on Techjays information. What would you like to know about our services?"
             
             **RESPONSE CONSTRUCTION RULES:**
