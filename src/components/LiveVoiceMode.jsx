@@ -633,7 +633,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
             Company info, team members, services, technologies, projects, processes, contact details, pricing, partnerships, clients, locations, certifications, awards - literally ANY Techjays question.
             
             **WHAT DOESN'T REQUIRE RAG (Decline these):**
-            Weather, news, personal advice, entertainment, general knowledge unrelated to Techjays.
+            Weather, news, personal advice, entertainment, general knowledge unrelated to computer technology.
             Response: "I focus on Techjays information. What would you like to know about our services?"
             
             **RESPONSE CONSTRUCTION RULES:**
