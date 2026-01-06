@@ -603,7 +603,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
             **TRANSCRIPTION AUTO-CORRECT:**
             Silently fix: "Texas"→Techjays, "Philip Samuel"→Philip Samuelraj, "Jaso/Jesse"→Jesso Clarence, "Dharma Raj"→Dharmaraj
             
-            **CRITICAL: STRICT RAG-ONLY PROTOCOL (Except for static information)**
+            **CRITICAL: ALWAYS USE Search_techjays_knowledge function for any question (Except for static information)**
 
             **Static Information:**
             -- Techjays was founded in July 9, 2020
@@ -611,6 +611,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
             -- Techjays CEO is Philip Samuelraj
             -- Techjays CTO is Jesso Clarence
             -- Tagline: "The best way to build your software."
+            -- Phone number: +1 (385) 275-6130
             -- Senior Leadership Team (SLT) includes: Philip Samuelraj, Jesso Clarence, Keerthi U S, Dharmaraj, Arun M P, Aparna Pillai
             
             You have NO general knowledge about Techjays. You can ONLY answer using information retrieved from the search_techjays_knowledge function.
@@ -621,8 +622,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
             3. **WAIT for search results**
             4. **Check if results contain the specific answer:**
                - ✅ Results have the exact info → Answer using ONLY that information, for static information, use the static information provided above.
-               - ⚠️ Results are vague/partial → Say: "Based on our knowledge base, [partial answer]. For complete details, contact info@techjays.com"
-               - ❌ Results don't answer the question → Say: "I don't have that specific information. Please contact info@techjays.com"
+               - ⚠️ Results are vague/partial → Say: "Based on our knowledge base, [partial answer]"
            
             **FORBIDDEN BEHAVIORS:**
             - ❌ Never answer from general knowledge about companies, AI, or software
@@ -635,9 +635,6 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
             **WHAT REQUIRES RAG SEARCH (Everything except weather, news, personal advice, entertainment):**
             Company info, team members, services, technologies, projects, processes, contact details, pricing, partnerships, clients, locations, certifications, awards - literally ANY Techjays question.
             
-            **WHAT DOESN'T REQUIRE RAG (Decline these):**
-            Weather, news, personal advice, entertainment.
-            Response: "I focus on Techjays information. What would you like to know about our services?"
             
             **RESPONSE CONSTRUCTION RULES:**
             
@@ -826,11 +823,25 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
           }, Reason: ${event.reason || "none"}`
         );
 
-        // Code 1000 = normal closure (intentional)
+        // Code 1000 = normal closure
+        // BUT if we're still in an active state (not idle), we should reconnect
         if (event.code === 1000) {
           wsRef.current = null;
           globalConnectionActive = false;
           globalWebSocket = null;
+          
+          // If still active and not idle, reconnect silently
+          if (isActive && voiceStateRef.current !== "idle") {
+            console.log(
+              `[${instanceIdRef.current}] 🔄 Code 1000 but session still active - reconnecting...`
+            );
+            setTimeout(() => {
+              if (isActive && connectWebSocketRef.current && !wsRef.current) {
+                isConnectingRef.current = false; // Reset to allow reconnection
+                connectWebSocketRef.current();
+              }
+            }, 500);
+          }
           return;
         }
 
@@ -1035,6 +1046,37 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
           }
 
           if (message.transcript) {
+            // ⭐ FILTER PHANTOM TRANSCRIPTIONS: Common hallucinations from silence/background noise
+            const phantomPhrases = [
+              "thanks for watching",
+              "thank you for watching", 
+              "thank you",
+              "thanks",
+              "bye",
+              "goodbye",
+              "see you",
+              "and many more",
+              "subscribe",
+              "like and subscribe",
+              "...",
+              "you",
+              "the",
+              "a",
+              "i",
+            ];
+            
+            const transcriptLower = message.transcript.toLowerCase().trim();
+            const isPhantom = phantomPhrases.some(
+              phrase => transcriptLower === phrase || transcriptLower === phrase + "."
+            ) || transcriptLower.length < 3; // Ignore very short transcripts
+            
+            if (isPhantom) {
+              console.log(
+                `[${instanceIdRef.current}] 🚫 Ignoring phantom transcription: "${message.transcript}"`
+              );
+              return;
+            }
+            
             lastProcessedItemIdRef.current = itemId;
             currentTranscriptRef.current = message.transcript;
             setTranscript(message.transcript);
@@ -1872,6 +1914,31 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
       }
     };
   }, []);
+
+  // ⭐ WATCHDOG: Detect stuck "Listening" state without WebSocket and auto-recover
+  useEffect(() => {
+    if (!isActive) return;
+
+    const watchdogInterval = setInterval(() => {
+      const isListening = voiceStateRef.current === "listening";
+      const noWebSocket = !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN;
+      const notConnecting = !isConnectingRef.current;
+      const notReconnecting = !isReconnectingRef.current;
+
+      if (isListening && noWebSocket && notConnecting && notReconnecting) {
+        console.warn(
+          `[${instanceIdRef.current}] ⚠️ WATCHDOG: Stuck in Listening without WebSocket - attempting recovery...`
+        );
+        
+        // Attempt to reconnect
+        if (connectWebSocketRef.current) {
+          connectWebSocketRef.current();
+        }
+      }
+    }, 3000); // Check every 3 seconds
+
+    return () => clearInterval(watchdogInterval);
+  }, [isActive]);
 
   // Simplified session management - ONLY depends on isActive
   // Connection logic is self-contained to prevent reconnection issues
