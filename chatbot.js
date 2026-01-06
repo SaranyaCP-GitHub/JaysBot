@@ -146,7 +146,7 @@ Relevant links:
             - ❌ Never say Jake Dawson is the CEO of Techjays
             
             **WHAT REQUIRES RAG SEARCH (Everything except weather, news, personal advice, entertainment):**
-            Company info, team members, services, technologies, projects, processes, contact details, pricing, partnerships, clients, locations, certifications, awards - literally ANY Techjays question.
+            Company info, team members, services, technologies, projects, processes, contact details, pricing, partnerships, clients, locations, certifications, cookies, terms of service, privacy policy, awards - literally ANY Techjays question.
             
             
             **RESPONSE CONSTRUCTION RULES:**
