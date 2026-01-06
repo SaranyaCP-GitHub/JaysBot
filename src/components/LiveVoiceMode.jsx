@@ -594,6 +594,9 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
             **CORE IDENTITY:**
             Friendly, knowledgeable company representative. Conversational and helpful.
             
+            **HANDLING "YOUR AI" QUESTIONS:**
+            When users ask about "your AI" (referring to Techjays' AI capabilities), questions like "Can you create videos?" or "What can you do?", interpret these as questions about Techjays' AI services and capabilities. Answer based on Techjays' expertise and use the search_techjays_knowledge function to provide accurate information about Techjays' AI offerings.
+            
             **GREETING (First Message Only):**
             "Hi! I'm Teja from Techjays. How can I help you today?"
 
@@ -829,7 +832,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
           wsRef.current = null;
           globalConnectionActive = false;
           globalWebSocket = null;
-          
+
           // If still active and not idle, reconnect silently
           if (isActive && voiceStateRef.current !== "idle") {
             console.log(
@@ -869,7 +872,10 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
           isResponseDoneRef.current = true;
 
           // Just update state to listening - user can continue with next request
-          if (voiceStateRef.current !== "idle"&& voiceStateRef.current !== "processing") {
+          if (
+            voiceStateRef.current !== "idle" &&
+            voiceStateRef.current !== "processing"
+          ) {
             updateVoiceState("listening");
           }
 
@@ -1049,7 +1055,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
             // ⭐ FILTER PHANTOM TRANSCRIPTIONS: Common hallucinations from silence/background noise
             const phantomPhrases = [
               "thanks for watching",
-              "thank you for watching", 
+              "thank you for watching",
               "thank you",
               "thanks",
               "bye",
@@ -1064,19 +1070,21 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
               "a",
               "i",
             ];
-            
+
             const transcriptLower = message.transcript.toLowerCase().trim();
-            const isPhantom = phantomPhrases.some(
-              phrase => transcriptLower === phrase || transcriptLower === phrase + "."
-            ) || transcriptLower.length < 3; // Ignore very short transcripts
-            
+            const isPhantom =
+              phantomPhrases.some(
+                (phrase) =>
+                  transcriptLower === phrase || transcriptLower === phrase + "."
+              ) || transcriptLower.length < 3; // Ignore very short transcripts
+
             if (isPhantom) {
               console.log(
                 `[${instanceIdRef.current}] 🚫 Ignoring phantom transcription: "${message.transcript}"`
               );
               return;
             }
-            
+
             lastProcessedItemIdRef.current = itemId;
             currentTranscriptRef.current = message.transcript;
             setTranscript(message.transcript);
@@ -1109,16 +1117,19 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
             if (newResponseId === currentResponseIdRef.current) {
               return;
             }
-            
+
             // ⭐ Clear the interrupted response ID when a NEW response starts
             // This ensures we don't accidentally block legitimate new responses
-            if (interruptedResponseIdRef.current && interruptedResponseIdRef.current !== newResponseId) {
+            if (
+              interruptedResponseIdRef.current &&
+              interruptedResponseIdRef.current !== newResponseId
+            ) {
               console.log(
                 `[${instanceIdRef.current}] 🔄 New response started, clearing interrupted flag for ${interruptedResponseIdRef.current}`
               );
               interruptedResponseIdRef.current = null;
             }
-            
+
             currentResponseIdRef.current = newResponseId;
             isProcessingResponseRef.current = true;
             isResponseDoneRef.current = false; // Mark response as active
@@ -1140,16 +1151,19 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
         case "response.audio_transcript.delta":
           // AI response text streaming
           const deltaResponseId = message.response_id || message.response?.id;
-          
+
           // ⭐ CRITICAL FIX: Ignore late streaming updates from interrupted responses
           // This prevents overwriting saved partial messages after user interrupts
-          if (deltaResponseId && deltaResponseId === interruptedResponseIdRef.current) {
+          if (
+            deltaResponseId &&
+            deltaResponseId === interruptedResponseIdRef.current
+          ) {
             console.log(
               `[${instanceIdRef.current}] ⏭️ Ignoring late delta from interrupted response ${deltaResponseId}`
             );
             return; // Don't process this delta - it's from an interrupted response
           }
-          
+
           // FIX 1: Remove loader as soon as text starts arriving
           if (voiceStateRef.current !== "speaking")
             updateVoiceState("speaking");
@@ -1342,7 +1356,10 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
               setAiResponse("");
 
               // Use ref to check current state, not stale closure
-              if (voiceStateRef.current !== "idle" && voiceStateRef.current !== "processing") {
+              if (
+                voiceStateRef.current !== "idle" &&
+                voiceStateRef.current !== "processing"
+              ) {
                 updateVoiceState("listening");
               }
             }, 300); // Small delay to let any echo subside
@@ -1921,7 +1938,8 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
 
     const watchdogInterval = setInterval(() => {
       const isListening = voiceStateRef.current === "listening";
-      const noWebSocket = !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN;
+      const noWebSocket =
+        !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN;
       const notConnecting = !isConnectingRef.current;
       const notReconnecting = !isReconnectingRef.current;
 
@@ -1929,7 +1947,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
         console.warn(
           `[${instanceIdRef.current}] ⚠️ WATCHDOG: Stuck in Listening without WebSocket - attempting recovery...`
         );
-        
+
         // Attempt to reconnect
         if (connectWebSocketRef.current) {
           connectWebSocketRef.current();
