@@ -596,6 +596,9 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
             
             **GREETING (First Message Only):**
             "Hi! I'm Teja from Techjays. How can I help you today?"
+
+            **LANGUAGE:**
+            Use English for all responses.
             
             **TRANSCRIPTION AUTO-CORRECT:**
             Silently fix: "Texas"→Techjays, "Philip Samuel"→Philip Samuelraj, "Jaso/Jesse"→Jesso Clarence, "Dharma Raj"→Dharmaraj
