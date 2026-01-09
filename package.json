@@ -12,7 +12,7 @@
     "predeploy": "npm run build",
     "deploy": "gh-pages -d dist",
     "deploy:staging": "npm run build:staging && node scripts/copy-to-staging.js && gh-pages -d dist-staging",
-    "deploy:production": "npm run build:production && gh-pages -d dist"
+    "deploy:production": "npm run build:production && node scripts/preserve-staging.js && gh-pages -d dist"
   },
   "dependencies": {
     "dotenv": "^17.2.3",
