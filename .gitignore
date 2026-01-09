@@ -9,7 +9,9 @@ lerna-debug.log*
 
 node_modules
 dist
+dist-staging
 dist-ssr
+temp-gh-pages
 *.local
 
 # Editor directories and files
