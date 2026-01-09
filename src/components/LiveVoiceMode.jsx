@@ -711,7 +711,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
             - If you hear silence or background noise, do not transcribe it
             - Never output 'Thanks for watching' or 'Thank you' unless the user explicitly said it
             - Only transcribe actual speech from the user`,
-            voice: "ash",
+            voice: "alloy",
             input_audio_format: "pcm16",
             output_audio_format: "pcm16",
 
