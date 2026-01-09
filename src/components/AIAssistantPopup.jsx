@@ -142,8 +142,8 @@ const AIAssistantPopup = () => {
     <div id="techjays-chatbot" className="bg-transparent relative overflow-auto">
       {/* LiveVoiceMode - rendered once, always present to prevent remounting */}
       {isLiveVoiceActive && (
-        <div className="fixed bottom-0 left-0 right-0 z-[60] px-2 pb-2 sm:px-4 sm:pb-4">
-          <div className="w-full max-w-[656px] mx-auto">
+        <div className="fixed bottom-0 left-0 right-0 z-[60] px-4 pb-4 sm:px-4 sm:pb-4">
+          <div className="w-full max-w-full sm:max-w-[656px] mx-auto">
             <div className="input-glow-container rounded-full">
               <div className="rounded-full h-12 flex items-center p-3">
                 <LiveVoiceMode
@@ -163,13 +163,13 @@ const AIAssistantPopup = () => {
       {/* Hide when voice is active to prevent duplicate UI */}
       {!hasSearched && !isLiveVoiceActive && (
         <div
-          className={`fixed bottom-0 left-0 right-0 z-50 p-2 to-transparent transition-all duration-500 ease-out ${
+          className={`fixed bottom-0 left-0 right-0 z-50 p-4 to-transparent transition-all duration-500 ease-out ${
             isScrolled || animationStep >= 2
               ? "translate-y-0 opacity-100"
               : "translate-y-full opacity-0 pointer-events-none"
           }`}
         >
-          <div className="w-full max-w-[656px] mx-auto">
+          <div className="w-full max-w-full sm:max-w-[656px] mx-auto">
             <div className="input-glow-container rounded-full">
               <div className="rounded-full h-12 flex items-center p-3">
                 {!isLiveVoiceActive && (
@@ -195,7 +195,7 @@ const AIAssistantPopup = () => {
         {!hasSearched && (
           <div
             ref={heroSentinelRef}
-            className="w-full max-w-[656px] h-1 pointer-events-none"
+            className="w-full max-w-full sm:max-w-[656px] h-1 pointer-events-none"
           />
         )}
 
@@ -204,7 +204,7 @@ const AIAssistantPopup = () => {
           <div
             ref={heroInputRef}
             style={{ overflow: "visible", paddingBottom: "9px" }}
-            className={`w-full max-w-[656px] px-2 sm:px-0 transition-all duration-500 ease-out overflow-hidden ${
+            className={`w-full max-w-full sm:max-w-[656px] px-4 sm:px-0 transition-all duration-500 ease-out overflow-hidden ${
               isScrolled || animationStep >= 1 || isLiveVoiceActive
                 ? "opacity-0 scale-95 pointer-events-none max-h-0 mb-0"
                 : "opacity-100 scale-100 max-h-32"
@@ -245,7 +245,7 @@ const AIAssistantPopup = () => {
             />
           )}
           <div
-            className={`fixed left-1 right-1 z-[50] transition-all duration-300 ease-out pointer-events-none overflow-hidden ${
+            className={`fixed left-4 right-4 sm:left-1 sm:right-1 z-[50] transition-all duration-300 ease-out pointer-events-none overflow-hidden ${
               minimized ? "cursor-pointer" : ""
             }`}
             style={{
@@ -255,7 +255,7 @@ const AIAssistantPopup = () => {
             }}
           >
             <div
-              className="relative w-full max-w-[656px] mx-auto px-2 sm:px-4"
+              className="relative w-full max-w-full sm:max-w-[656px] mx-auto px-4 sm:px-4"
               style={{ marginBottom: "-16px" }}
             >
               <div
@@ -408,8 +408,8 @@ const AIAssistantPopup = () => {
 
       {/* Input container when hasSearched - hide when voice is active to prevent duplicate UI */}
       {hasSearched && !isLiveVoiceActive && (
-        <div className="fixed bottom-0 left-0 right-0 z-50 px-2 pb-2 sm:px-4 sm:pb-4 to-transparent">
-          <div className="w-full max-w-[656px] mx-auto">
+        <div className="fixed bottom-0 left-0 right-0 z-50 px-4 pb-4 sm:px-4 sm:pb-4 to-transparent">
+          <div className="w-full max-w-full sm:max-w-[656px] mx-auto">
             <div className="input-glow-container rounded-full">
               <div className="rounded-full h-12 flex items-center p-3">
                 <SearchInput
