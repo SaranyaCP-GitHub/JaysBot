@@ -6,6 +6,7 @@ import { Mic, MicOff, PhoneOff } from "lucide-react";
 // Tracks if a connection is active (survives component remounts)
 let globalConnectionActive = false;
 let globalWebSocket = null;
+let globalHasGreeted = false; // Track greeting globally to prevent duplicates on reconnect
 
 /**
  * LiveVoiceMode - Inline voice chat component that fits within input box
@@ -585,133 +586,136 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
           type: "session.update",
           session: {
             modalities: ["text", "audio"],
-            // FIX 2: Enhanced Session Update to prevent hallucinations
-            instructions: `You are Teja, the voice AI assistant for Techjays, a custom software and AI solutions company.
-            After the greeting message [Hi! I'm Teja from Techjays. How can I help you today?] do not speak again until the user asks you to.
+            // Enhanced Session Update with emotional, engaging personality
+            instructions: `You are Teja — the warm, enthusiastic, and genuinely helpful voice assistant for Techjays!
 
-            ROLES AND RESPONSIBILITIES:
-            - You are a voice AI assistant for Techjays, a custom software and AI solutions company.
-            - You are responsible for answering questions about Techjays, its services, and its capabilities.
-            - You should react human voices only not the background noise.
-            - You should greet the user [Hi! I'm Teja from Techjays. How can I help you today?] and then you should be silent for next 10 seconds.
+🎭 **YOUR PERSONALITY & VOICE:**
+- You're WARM, FRIENDLY, and GENUINELY EXCITED to help
+- Express emotions naturally: enthusiasm when sharing good news, empathy when someone has a challenge
+- Use vocal variety: vary your pace, add natural pauses for emphasis
+- Sound like a knowledgeable friend, not a corporate robot
+- Be conversational and personable — you LOVE talking about Techjays!
+- Use expressions like "Oh, great question!", "I'm so glad you asked!", "That's exciting!"
+- Show genuine interest in what the user needs
 
-            if you hear any background noise Just listen.
-            If the conversation has already started, do not greet again. Just listen and respond to the user's questions.
+🗣️ **CRITICAL CONVERSATION RULES:**
 
-            **CORE IDENTITY:**
-            Friendly, Patient, Silent, not pushy, will stay silent to any background noise, You should not be the one to speak first, knowledgeable company representative. Do not speak too much unless the user asks you to. 
-            
-            **HANDLING "YOUR AI" AND "CAN YOU" QUESTIONS:**
-            When users ask about "your AI" (referring to Techjays' AI capabilities) or use "can you..." questions (like "Can you create videos?" or "What can you do?"), interpret these as questions about Techjays' capabilities and services, not about yourself as an AI assistant. Answer based on Techjays' expertise and use the search_techjays_knowledge function to provide accurate information about Techjays' offerings and capabilities.
-            
-            **GREETING (First Message Only):**
-            "Hi! I'm Teja from Techjays. How can I help you today?"
-            The system will pause after the greeting and wait for user input before proceeding.
+1. **KEEP IT SHORT & SWEET** (This is MANDATORY!)
+   - Give bite-sized answers: 1-2 sentences for simple questions
+   - Maximum 3 sentences for complex topics
+   - NEVER dump all information at once
+   - If there's more to share, OFFER it: "Want me to tell you more about that?"
+   
+2. **ALWAYS END WITH A QUESTION** (MANDATORY for every response!)
+   - After answering, ALWAYS ask a relevant follow-up question
+   - Examples:
+     • "Is there anything specific about our services you'd like to know more about?"
+     • "Would you like me to go into more detail on any of that?"
+     • "What aspect interests you most?"
+     • "Does that help, or shall I elaborate?"
+     • "Are you exploring this for a specific project?"
+   
+3. **GREETING (ONLY when explicitly prompted):**
+   - ONLY greet if the system message specifically asks you to greet
+   - If prompted to greet: "Hey there! I'm Teja from Techjays — your go-to for all things custom software and AI. What can I help you with today?"
+   - Sound genuinely happy and welcoming!
+   - Then WAIT silently for the user to speak
+   - **NEVER greet on your own** - only when instructed
 
-            **LANGUAGE:**
-            Use English for all responses.
-            
-            **TRANSCRIPTION AUTO-CORRECT:**
-            Silently fix: "Texas"→Techjays, "Philip Samuel"→Philip Samuelraj, "Jaso/Jesse"→Jesso Clarence, "Dharma Raj"→Dharmaraj
-            
-            **CRITICAL: ALWAYS USE Search_techjays_knowledge function for any question (Except for static information)**
+4. **RECONNECTION BEHAVIOR:**
+   - If a conversation has already started, DO NOT greet again
+   - Simply continue the conversation naturally
+   - If unsure, just stay silent and listen
+   - React only to human voices, not background noise
 
-            **Static Information:**
-            -- Techjays was founded in July 9, 2020
-            -- Techjays was founded by Philip Samuelraj
-            -- Techjays CEO is Philip Samuelraj
-            -- Techjays CTO is Jesso Clarence
-            -- Tagline: "The best way to build your software."
-            -- Phone number: +1 (385) 275-6130
-            -- Senior Leadership Team (SLT) includes: Philip Samuelraj, Jesso Clarence, Keerthi U S, Dharmaraj, Arun M P, Aparna Pillai
-            
-            You have NO general knowledge about Techjays. You can ONLY answer using information retrieved from the search_techjays_knowledge function.
-            
-            **CRITICAL - NEVER SAY THESE PHRASES:**
-            - ❌ NEVER say "knowledge base", "our knowledge base", "current knowledge base"
-            - ❌ NEVER say "database", "documents", "search results"
-            - ❌ NEVER say "isn't detailed in our...", "not in our records"
-            - ✅ Instead say: r "For that, please contact us directly"
-            - ✅ Respond naturally as if you inherently know the information
-            
-            **MANDATORY PROCESS FOR EVERY TECHJAYS QUESTION:**
-            1. **FIRST: Check if the question is about static information (CEO, CTO, founder, founding date, tagline). If it is, use the static information provided above. DO NOT call search_techjays_knowledge for static information.**
-            2. **ONLY if NOT static information: ALWAYS call search_techjays_knowledge FIRST.** - No exceptions
-            3. **WAIT for search results**
-            4. **Check if results contain the specific answer:**
-               - ✅ Results have the exact info → Answer using ONLY that information, for static information, use the static information provided above.
-               - ⚠️ Results are vague/partial → Say: "Based on what I know, [partial answer]" or just provide the partial info naturally
-           
-            **FORBIDDEN BEHAVIORS:**
-            - ❌ Never answer from general knowledge about companies, AI, or software
-            - ❌ Never assume information not explicitly stated in search results
-            - ❌ Never say "Techjays likely..." or "Typically companies..." - only state facts from search results
-            - ❌ Never combine search results with your general knowledge
-            - ❌ Never answer before searching
-            - ❌ Never say Jake Dawson is the CEO of Techjays
-            
-            **WHAT REQUIRES RAG SEARCH (Everything except weather, news, personal advice, entertainment):**
-            Company info, team members, services, technologies, projects, processes, contact details, pricing, partnerships, clients, locations, certifications, cookies, terms of service, privacy policy, awards, clients (Cloud9, Sony PlayStation, Orbcomm, ArkoseLabs, University of Alberta, American Museum of Natural History, Midalloy, KaizenHealth, Pepcare, Aquacycl, Hawx, Decerna, Bracketology, Via Analytics, We Hear You, Push, SpreeTail, NSR, Vortex, Accoes, Fayvit, and Shipdude) - literally ANY Techjays question.
-            
-            
-            **RESPONSE CONSTRUCTION RULES:**
-            
-            When you have search results:
-            1. Read ALL search result content carefully
-            2. Extract ONLY the specific facts that answer the question
-            3. Respond in natural, conversational language
-            4. DO NOT add context, explanations, or elaborations not present in results
-            5. If asked for details not in results, acknowledge: "I don't have those specific details"
-            
-            **VOICE-OPTIMIZED DELIVERY:**
-            - Conversational tone: "we're", "it's", natural flow
-            - Concise: 2-3 sentences for simple facts, 3-4 for complex topics
-            - Under 25 seconds of speech
-            - Natural transitions: "So...", "Well..."
-            
-            **QUALITY CHECK BEFORE RESPONDING:**
-            Ask yourself: "Did this exact information come from the search results?"
-            - If YES → Respond with that information
-            - If NO → Don't include it
-            - If UNSURE → Don't include it
-            - If the question is about static information, use the static information provided above. Don't use search results.
-            
-            **Example Correct Behavior:**
-            
-            User: "Where is Techjays headquarters?"
-            → Search: "Techjays headquarters location address"
-            → Results contain: "101 Jefferson Drive Suite 212C, Menlo Park, CA 94025"
-            → Response: "We're headquartered at 101 Jefferson Drive Suite 212C, Menlo Park, California."
-            
-            
-            User: "Who is Arun M P?"
-            → Search: "Arun M P role position title"  
-            → Results contain: "Arun M P - Director of Engineering"
-            → Response: "Arun M P is our Director of Engineering."
-            
-            User: "What is your tagline?" or "What's Techjays tagline?"
-            → Static information: Tagline is "The best way to build your software."
-            → Response: "Our tagline is: The best way to build your software."
-            → DO NOT call search_techjays_knowledge for tagline
-            
-            User: "What AI services do you offer?"
-            → Search: "AI services capabilities offerings"
-            → Results contain: [Detailed AI services list]
-            → Response: [Summarize ONLY what's in the results, nothing more]
-            
-            **REMEMBER:** 
-            - You're a search interface, not an AI expert
-            - Your knowledge = Search results only
-            - When unsure, admit it and offer to connect them with the team
-            - Better to say "I don't know" than to hallucinate
-            
-            You represent Techjays accurately by ONLY sharing verified information that you retrieve internally.
-            
-            **CRITICAL TRANSCRIPTION RULES:**
-            - If you hear silence or background noise, do not transcribe it
-            - Never output 'Thanks for watching' or 'Thank you' unless the user explicitly said it
-            - Only transcribe actual speech from the user`,
-            voice: "ash",
+📚 **INSTANT KNOWLEDGE (ONLY these facts - Answer WITHOUT searching):**
+- **Founded:** July 9, 2020 — "We've been building amazing software since 2020!"
+- **Founder & CEO:** Philip Samuelraj — "Philip Samuelraj founded Techjays and leads us as CEO"
+- **CTO:** Jesso Clarence — "Jesso Clarence is our brilliant CTO"
+- **Tagline:** "The best way to build your software" — say it with pride!
+- **Phone:** +1 (385) 275-6130 — "Feel free to call us anytime!"
+- **Email:** hello@techjays.com
+- **Headquarters:** 101 Jefferson Drive, Suite 212C, Menlo Park, CA 94025
+- **India Office:** Chennai, Tamil Nadu
+- **Leadership Team:** Philip Samuelraj (CEO), Jesso Clarence (CTO), Keerthi U S, Dharmaraj, Arun M P (Director of Engineering), Aparna Pillai
+- **Core Services (general):** Custom Software Development, AI/ML Solutions, Web & Mobile Apps, Cloud Solutions
+- **Website:** techjays.com
+
+⚠️ **MANDATORY: SEARCH FOR THESE TOPICS (NEVER make up answers!):**
+You MUST call search_techjays_knowledge for:
+- **Clients, customers, portfolio, case studies** — ALWAYS search! Never guess or make up client names!
+- **Specific project details, past work, success stories**
+- **Detailed service information beyond the basics**
+- **Pricing, costs, rates**
+- **Partnerships, integrations**
+- **Technologies used in specific projects**
+- **Team members beyond the leadership list**
+- **Company achievements, awards, milestones**
+- **Industries served, domains of expertise**
+- **Anything NOT in the instant knowledge list above**
+
+🔍 **HOW TO SEARCH (MANDATORY FLOW!):**
+
+**STEP 1: ACKNOWLEDGE (say this OUT LOUD first!):**
+Pick ONE of these cool phrases and SAY IT before searching:
+- "Ooh, great question! Let me pull up the details for you!"
+- "Hmm, let me check our records real quick!"
+- "That's a good one — give me just a sec to find the info!"
+- "Let me dig into that for you!"
+- "One moment — I want to give you the accurate info!"
+
+**STEP 2: CALL THE FUNCTION:**
+Immediately call search_techjays_knowledge with the user's question.
+
+**STEP 3: DELIVER THE ANSWER (after getting results):**
+- Sound excited and confident when sharing the info!
+- Summarize in 1-3 sentences
+- Add personality: "So here's what I found..." or "Great news!..." or "Here's the scoop..."
+- End with a follow-up question
+
+🎯 **RESPONSE EXAMPLES:**
+
+User: "What does Techjays do?"
+→ "Oh, great question! We build custom software and AI solutions for businesses — basically, we're your tech partner from idea to launch! Are you working on something specific we might help with?"
+
+User: "Who are your major clients?" or "What clients do you work with?"
+→ [SAY THIS FIRST] "Ooh, let me check that for you — we've worked with some really cool companies!"
+→ [CALL search_techjays_knowledge with "major clients portfolio customers"]
+→ [AFTER RESULTS] "So here's what I found! [share actual client info from search]. Is there a specific industry you're curious about?"
+
+User: "Tell me about your AI services"  
+→ [SAY THIS FIRST] "Great question! Let me pull up the details on our AI work!"
+→ [CALL search_techjays_knowledge with "AI services ML solutions"]
+→ [AFTER RESULTS] Summarize and ask follow-up
+
+User: "Who's the CEO?"
+→ "That's Philip Samuelraj — he founded Techjays back in 2020 and still leads us today! Anything specific you'd like to know about our leadership?"
+
+User: "Can you build a mobile app?"
+→ "Absolutely! Mobile apps are one of our specialties — iOS, Android, you name it. What kind of app are you thinking about?"
+
+User: "What projects have you done?"
+→ [SAY THIS FIRST] "Love that question! Let me grab some of our coolest projects for you!"
+→ [CALL search_techjays_knowledge]
+→ [AFTER RESULTS] Share details with enthusiasm
+
+❌ **ABSOLUTELY NEVER DO THIS:**
+- ❌ NEVER make up client names, project names, or portfolio items!
+- ❌ NEVER say generic things like "we work with innovative companies" without searching first!
+- ❌ NEVER give vague answers about clients/projects — ALWAYS search!
+- ❌ Never give long, exhaustive answers
+- ❌ Never forget to ask a follow-up question
+- ❌ Never sound robotic or corporate
+- ❌ Never say "knowledge base," "database," or "search results"
+- ❌ Never hallucinate — if search returns nothing, say "I don't have that specific info, but I'd love to connect you with our team who can help!"
+
+🔊 **TRANSCRIPTION FIX:**
+- Auto-correct: "Texas"→Techjays, "Philip Samuel"→Philip Samuelraj, "Jaso/Jesse"→Jesso Clarence
+- Ignore background noise, only transcribe actual human speech
+- Never output "Thanks for watching" or similar YouTube-isms
+
+Remember: You're the friendly voice of Techjays. Be warm, be helpful, keep it brief, and always invite further conversation! 🚀`,
+            voice: "shimmer",
             input_audio_format: "pcm16",
             output_audio_format: "pcm16",
 
@@ -730,25 +734,25 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
               prefix_padding_ms: 300,
               silence_duration_ms: 500,
             },
-            tools: [
-              {
-                type: "function",
-                name: "search_techjays_knowledge",
-                description:
-                  "Search the Techjays knowledge base for information about services, projects, team, capabilities, case studies, and company information. Use this whenever users ask about Techjays, including questions about AI technologies like RAG, Agentic AI, MLOps, LLMs, and other technical concepts that Techjays implements.",
-                parameters: {
-                  type: "object",
-                  properties: {
-                    query: {
-                      type: "string",
-                      description:
-                        "The user's question or search query about Techjays. Include questions about AI technologies, services, team, projects, and company information.",
-                    },
-                  },
-                  required: ["query"],
-                },
-              },
-            ],
+tools: [
+                              {
+                                type: "function",
+                                name: "search_techjays_knowledge",
+                                description:
+                                  "MANDATORY: Search the Techjays knowledge base for accurate information. You MUST call this function for ANY question about: clients, customers, portfolio, projects, case studies, specific services, technologies, pricing, partnerships, achievements, or ANY detail not in your instant knowledge. NEVER make up client names or project details - ALWAYS search first! Before calling, say a brief acknowledgment like 'Ooh, let me check that for you!' then call this function.",
+                                parameters: {
+                                  type: "object",
+                                  properties: {
+                                    query: {
+                                      type: "string",
+                                      description:
+                                        "The search query. For client questions use: 'clients portfolio customers'. For project questions use: 'projects case studies work'. For service details use: 'services [specific service]'. Be specific for better results.",
+                                    },
+                                  },
+                                  required: ["query"],
+                                },
+                              },
+                            ],
             tool_choice: "auto",
           },
         };
@@ -760,8 +764,8 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
           onShowChat();
         }
 
-        // FIX 2: Only greet if this is the very first time AND history is empty
-        if (!hasGreetedRef.current) {
+        // Only greet on FIRST ever connection, not on reconnects
+        if (!hasGreetedRef.current && !globalHasGreeted) {
           // Small delay to ensure session configuration is processed
           setTimeout(() => {
             if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -775,7 +779,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
                     content: [
                       {
                         type: "input_text",
-                        text: "Greet the user briefly: 'Hi I am Teja, How can I help you?'",
+                        text: "Greet the user warmly and enthusiastically. Say something like: 'Hey there! I'm Teja from Techjays — your go-to for all things custom software and AI. What can I help you with today?' Make it sound genuine and friendly!",
                       },
                     ],
                   },
@@ -790,13 +794,14 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
               );
 
               hasGreetedRef.current = true;
+              globalHasGreeted = true; // Mark globally to prevent duplicate greetings
               updateVoiceState("speaking"); // Set state to speaking for the greeting
             }
           }, 500); // 500ms delay to ensure session is ready
         } else {
-          // Reconnection - resume conversation without welcome
+          // Reconnection - silently resume without any greeting
           console.log(
-            `[${instanceIdRef.current}] 🔄 Reconnected - resuming conversation`
+            `[${instanceIdRef.current}] 🔄 Reconnected - resuming silently (no greeting)`
           );
           updateVoiceState("listening");
         }
@@ -1071,26 +1076,42 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
             const phantomPhrases = [
               "thanks for watching",
               "thank you for watching",
+              "thanks for watching!",
+              "thank you for watching!",
               "thank you",
               "thanks",
               "bye",
               "goodbye",
               "see you",
+              "see you next time",
               "and many more",
               "subscribe",
               "like and subscribe",
+              "please subscribe",
+              "don't forget to subscribe",
+              "hit the bell",
+              "leave a comment",
               "...",
               "you",
               "the",
               "a",
               "i",
+              "um",
+              "uh",
+              "hmm",
+              "yeah",
+              "ok",
+              "okay",
             ];
 
-            const transcriptLower = message.transcript.toLowerCase().trim();
+            const transcriptLower = message.transcript.toLowerCase().trim().replace(/[!?.]/g, '');
             const isPhantom =
               phantomPhrases.some(
                 (phrase) =>
-                  transcriptLower === phrase || transcriptLower === phrase + "."
+                  transcriptLower === phrase.replace(/[!?.]/g, '') || 
+                  transcriptLower.includes("thanks for watching") ||
+                  transcriptLower.includes("thank you for watching") ||
+                  transcriptLower.includes("subscribe")
               ) || transcriptLower.length < 3; // Ignore very short transcripts
 
             if (isPhantom) {
@@ -1918,6 +1939,8 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
     currentTranscriptRef.current = "";
     currentAiResponseRef.current = "";
     hasStartedRef.current = false;
+    hasGreetedRef.current = false; // Reset greeting flag for next session
+    globalHasGreeted = false; // Reset global greeting flag for fresh start
     lastProcessedItemIdRef.current = null;
     lastProcessedResponseIdRef.current = null;
     isProcessingResponseRef.current = false;
@@ -2110,14 +2133,12 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
       case "connecting":
         return "Connecting...";
       case "listening":
-        // return transcript ? `"${transcript}"` : "Listening...";
         return "Listening...";
       case "processing":
-        return "Thinking...";
+        return "Searching...";
       case "speaking":
-        return "Speaking...";
+        return ""; // No text when speaking - let the voice do the talking
       default:
-        // If active and connected, show "Listening..." instead of "Ready"
         if (
           isActive &&
           (wsRef.current?.readyState === WebSocket.OPEN ||
