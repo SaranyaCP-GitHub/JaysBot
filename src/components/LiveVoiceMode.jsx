@@ -1,16 +1,43 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import LoadingDots from "../ui/atom/LoadingDots";
 import { Mic, MicOff, PhoneOff } from "lucide-react";
 
+// ⭐ SDK IMPORTS - Using OpenAI JavaScript SDK with Azure Realtime API support
+// Reference: https://devblogs.microsoft.com/azure-sdk/introducing-azure-openai-realtime-api-support-in-javascript/
+import { OpenAIRealtimeWebSocket } from "openai/beta/realtime/websocket";
+import { AzureOpenAI } from "openai";
+
+// Import audio utilities
+import {
+  base64ToArrayBuffer,
+  arrayBufferToBase64,
+  float32ToPcm16,
+  isPhantomTranscription,
+  AUDIO_CONSTRAINTS,
+} from "./voiceAudioUtils";
+
+// Import session configuration
+import {
+  AZURE_ENDPOINT,
+  API_VERSION,
+  MODEL,
+  SPEECH_TOKEN_API,
+  RAG_API_ENDPOINT,
+  getSessionConfig,
+  DEFAULT_TURN_DETECTION,
+  GREETING_CONFIG,
+} from "./voiceSessionConfig";
+
 // Module-level connection tracker - persists across component remounts
-// Tracks if a connection is active (survives component remounts)
 let globalConnectionActive = false;
-let globalWebSocket = null;
-let globalHasGreeted = false; // Track greeting globally to prevent duplicates on reconnect
+let globalRealtimeClient = null;
+let globalHasGreeted = false;
 
 /**
  * LiveVoiceMode - Inline voice chat component that fits within input box
  * Handles speech-to-speech conversation with Azure OpenAI Realtime API
+ * 
+ * ⭐ MIGRATED: Now uses OpenAI JavaScript SDK with Azure Realtime API support
+ * Reference: https://devblogs.microsoft.com/azure-sdk/introducing-azure-openai-realtime-api-support-in-javascript/
  *
  * @param {boolean} isActive - Whether the voice mode is active
  * @param {function} onClose - Callback to close the voice mode
@@ -23,9 +50,13 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
   const [transcript, setTranscript] = useState("");
   const [aiResponse, setAiResponse] = useState("");
   const [error, setError] = useState(null);
+  const [fatalError, setFatalError] = useState(null);
+  const [audioLevel, setAudioLevel] = useState(0);
+  const [frequencyData, setFrequencyData] = useState([0, 0, 0, 0, 0]);
+  const [sessionKey, setSessionKey] = useState(null);
 
-  // Refs for WebSocket and Audio
-  const wsRef = useRef(null);
+  // Refs for Realtime SDK client and Audio
+  const rtRef = useRef(null);
   const audioContextRef = useRef(null);
   const mediaStreamRef = useRef(null);
   const workletNodeRef = useRef(null);
@@ -34,64 +65,43 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
   const hasStartedRef = useRef(false);
   const currentTranscriptRef = useRef("");
   const currentAiResponseRef = useRef("");
-  const hasGreetedRef = useRef(false); // Track if greeting has been sent
-  const currentAiTextRef = useRef(""); // Keeps track of what the AI is saying RIGHT NOW
-  const currentAiTextSavedRef = useRef(false); // Track if current AI text was already saved (e.g., due to interruption)
-  const typingIndicatorClearedRef = useRef(false); // Track if typing indicator was cleared due to interruption
+  const hasGreetedRef = useRef(false);
+  const currentAiTextRef = useRef("");
+  const currentAiTextSavedRef = useRef(false);
+  const typingIndicatorClearedRef = useRef(false);
 
   // Additional refs to prevent duplicate handling
-  const voiceStateRef = useRef("idle"); // Track voice state for closures
-  const isCapturingRef = useRef(false); // Prevent multiple audio captures
-  const currentResponseIdRef = useRef(null); // Track current response to prevent duplicates
-  const handleServerMessageRef = useRef(null); // Store latest message handler
-  const lastProcessedItemIdRef = useRef(null); // Track last processed conversation item
-  const lastProcessedResponseIdRef = useRef(null); // Track last processed AI response
-  const isProcessingResponseRef = useRef(false); // Flag to prevent processing while AI is responding
-  const isConnectingRef = useRef(false); // Prevent multiple connection attempts
-  const instanceIdRef = useRef(Math.random().toString(36).substr(2, 9)); // Debug instance tracking
-  const sourceNodeRef = useRef(null); // Track audio source node for cleanup
-  const connectWebSocketRef = useRef(null); // Store latest connectWebSocket function
-  const cleanupRef = useRef(null); // Store latest cleanup function
-  const updateVoiceStateRef = useRef(null); // Store latest updateVoiceState function
-  const hasShownChatRef = useRef(false); // Track if chat has been shown to prevent duplicate calls
-  const isResponseDoneRef = useRef(false); // Track if response is already done (to prevent canceling completed responses)
-  const currentAudioSourceRef = useRef(null); // Track current playing audio source
-  const interruptedResponseIdRef = useRef(null); // Track the response ID that was interrupted to ignore late updates
-  const isInitialConnectionRef = useRef(true); // Track if this is the first connection (for welcome message)
-  const isReconnectingRef = useRef(false); // Prevent multiple simultaneous reconnection attempts
-  const [fatalError, setFatalError] = useState(null); // Fatal error state for error recovery
+  const voiceStateRef = useRef("idle");
+  const isCapturingRef = useRef(false);
+  const currentResponseIdRef = useRef(null);
+  const lastProcessedItemIdRef = useRef(null);
+  const lastProcessedResponseIdRef = useRef(null);
+  const isProcessingResponseRef = useRef(false);
+  const isConnectingRef = useRef(false);
+  const instanceIdRef = useRef(Math.random().toString(36).substr(2, 9));
+  const sourceNodeRef = useRef(null);
+  const connectRealtimeRef = useRef(null);
+  const cleanupRef = useRef(null);
+  const updateVoiceStateRef = useRef(null);
+  const hasShownChatRef = useRef(false);
+  const isResponseDoneRef = useRef(false);
+  const currentAudioSourceRef = useRef(null);
+  const interruptedResponseIdRef = useRef(null);
+  const isInitialConnectionRef = useRef(true);
+  const isReconnectingRef = useRef(false);
+  const lastInterruptTimeRef = useRef(0);
 
   // Token management refs
-  const tokenRef = useRef(null); // Current authentication token
-  const expiresAtRef = useRef(null); // Token expiration timestamp
-  const tokenRefreshTimerRef = useRef(null); // Timer for token refresh
-  const isFetchingTokenRef = useRef(false); // Prevent multiple token fetches
+  const tokenRef = useRef(null);
+  const expiresAtRef = useRef(null);
+  const tokenRefreshTimerRef = useRef(null);
+  const isFetchingTokenRef = useRef(false);
 
-  // Audio processing refs for noise reduction
-  const highPassFilterRef = useRef(null);
-  const lowPassFilterRef = useRef(null);
+  // Audio processing refs
   const analyserRef = useRef(null);
   const animationFrameRef = useRef(null);
-  const canSendAudioRef = useRef(true); // Control audio sending during AI speech
-
-  // Audio level state for visualization (optional)
-  const [audioLevel, setAudioLevel] = useState(0);
-  // Frequency data for realistic voice visualization (5 bars for different frequency bands)
-  const [frequencyData, setFrequencyData] = useState([0, 0, 0, 0, 0]);
-
-  // RAG session key management
-  const [sessionKey, setSessionKey] = useState(null);
+  const canSendAudioRef = useRef(true);
   const sessionKeyRef = useRef(null);
-
-  // Azure OpenAI Realtime API configuration
-  const AZURE_ENDPOINT = (
-    import.meta.env.VITE_AZURE_OPENAI_ENDPOINT ||
-    "saran-mj6uzvzg-eastus2.services.ai.azure.com"
-  ).replace(/\/$/, "");
-  const API_VERSION = "2025-10-01";
-  const MODEL = "gpt-4o-mini-realtime-preview";
-  const WS_PATH = "voice-live/realtime";
-  const SPEECH_TOKEN_API = "https://chat-api.techjays.com/api/v1/speech-token/";
 
   // Helper to update voice state and ref together
   const updateVoiceState = useCallback((newState) => {
@@ -117,39 +127,25 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
 
   // Get or create RAG session key
   const getOrCreateSessionKey = useCallback(async () => {
-    // Return existing session key if available
     if (sessionKeyRef.current) {
       return sessionKeyRef.current;
     }
 
-    // Create new session key
     try {
-      const response = await fetch(
-        "https://chat-api.techjays.com/api/v1/gemini-chat/",
-        {
-          method: "GET",
-        }
-      );
-
+      const response = await fetch(RAG_API_ENDPOINT, { method: "GET" });
       if (!response.ok) {
         throw new Error("Failed to retrieve session key");
       }
-
       const data = await response.json();
-
       if (data.session_key) {
         sessionStorage.setItem("session_key", data.session_key);
         setSessionKey(data.session_key);
         sessionKeyRef.current = data.session_key;
         return data.session_key;
       }
-
       throw new Error("No session key in response");
     } catch (error) {
-      console.error(
-        `[${instanceIdRef.current}] Error creating RAG session:`,
-        error
-      );
+      console.error(`[${instanceIdRef.current}] Error creating RAG session:`, error);
       return null;
     }
   }, []);
@@ -162,27 +158,20 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
 
         if (functionName === "search_techjays_knowledge") {
           updateVoiceState("processing");
-          // Get or create session key
           const currentSessionKey = await getOrCreateSessionKey();
 
           if (!currentSessionKey) {
             throw new Error("Failed to obtain session key");
           }
 
-          // Call your RAG API
-          const response = await fetch(
-            "https://chat-api.techjays.com/api/v1/gemini-chat/",
-            {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                session_key: currentSessionKey,
-                question: args.query,
-              }),
-            }
-          );
+          const response = await fetch(RAG_API_ENDPOINT, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              session_key: currentSessionKey,
+              question: args.query,
+            }),
+          });
 
           if (!response.ok) {
             throw new Error("Failed to fetch from knowledge base");
@@ -192,7 +181,6 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
           const data = await response.json();
 
           if (data.result && data.response && data.response.text) {
-            // Update session key if provided
             if (data.session_key) {
               sessionStorage.setItem("session_key", data.session_key);
               setSessionKey(data.session_key);
@@ -201,21 +189,17 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
 
             let botMessage = data.response.text;
 
-            // Handle links if they exist
             if (data.response.links && data.response.links.length > 0) {
               const linkTexts = botMessage.split(", ");
               let formattedLinks = "\n\nRelevant links:\n";
               data.response.links.forEach((link, index) => {
                 const cleanedLink = link.replace(/<|>|\[|\]/g, "");
-                const linkText = linkTexts[index]
-                  ? linkTexts[index].trim()
-                  : `Link ${index + 1}`;
+                const linkText = linkTexts[index] ? linkTexts[index].trim() : `Link ${index + 1}`;
                 formattedLinks += `- ${linkText}: ${cleanedLink}\n`;
               });
               botMessage += formattedLinks;
             }
 
-            // Clean up message formatting
             botMessage = botMessage.replace(/<link>/g, "").replace(/, $/, "");
             botMessage = botMessage.replace(/\s*\.:\s*/g, "");
 
@@ -228,85 +212,50 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
             throw new Error("Invalid response format from knowledge base");
           }
         } else {
-          result = {
-            success: false,
-            error: `Unknown function: ${functionName}`,
-          };
+          result = { success: false, error: `Unknown function: ${functionName}` };
         }
 
-        // Send function result back to the model
-        if (wsRef.current?.readyState === WebSocket.OPEN) {
-          wsRef.current.send(
-            JSON.stringify({
-              type: "conversation.item.create",
-              item: {
-                type: "function_call_output",
-                call_id: callId,
-                output: JSON.stringify(result),
-              },
-            })
-          );
-
-          // Trigger the model to respond with the function result
-          wsRef.current.send(
-            JSON.stringify({
-              type: "response.create",
-            })
-          );
+        if (rtRef.current) {
+          rtRef.current.send({
+            type: "conversation.item.create",
+            item: {
+              type: "function_call_output",
+              call_id: callId,
+              output: JSON.stringify(result),
+            },
+          });
+          rtRef.current.send({ type: "response.create" });
         }
       } catch (error) {
-        console.error(
-          `[${instanceIdRef.current}] Function execution error:`,
-          error
-        );
-
-        // Send error back to model
-        if (wsRef.current?.readyState === WebSocket.OPEN) {
-          wsRef.current.send(
-            JSON.stringify({
-              type: "conversation.item.create",
-              item: {
-                type: "function_call_output",
-                call_id: callId,
-                output: JSON.stringify({
-                  success: false,
-                  error: error.message,
-                }),
-              },
-            })
-          );
-
-          // Still trigger a response so the model can tell the user about the error
-          wsRef.current.send(
-            JSON.stringify({
-              type: "response.create",
-            })
-          );
+        console.error(`[${instanceIdRef.current}] Function execution error:`, error);
+        if (rtRef.current) {
+          rtRef.current.send({
+            type: "conversation.item.create",
+            item: {
+              type: "function_call_output",
+              call_id: callId,
+              output: JSON.stringify({ success: false, error: error.message }),
+            },
+          });
+          rtRef.current.send({ type: "response.create" });
         }
       }
     },
-    [getOrCreateSessionKey]
+    [getOrCreateSessionKey, updateVoiceState]
   );
 
   // Fetch speech token from API
   const fetchSpeechToken = useCallback(async () => {
-    // Prevent multiple simultaneous token fetches
     if (isFetchingTokenRef.current) {
-      // Wait for existing fetch to complete (with timeout to prevent infinite loop)
       let attempts = 0;
-      const MAX_WAIT_ATTEMPTS = 50; // 5 seconds max (50 * 100ms)
-
+      const MAX_WAIT_ATTEMPTS = 50;
       while (isFetchingTokenRef.current && attempts < MAX_WAIT_ATTEMPTS) {
         await new Promise((resolve) => setTimeout(resolve, 100));
         attempts++;
       }
-
       if (attempts >= MAX_WAIT_ATTEMPTS) {
-        throw new Error(
-          "Token fetch timeout - another fetch is taking too long"
-        );
+        throw new Error("Token fetch timeout - another fetch is taking too long");
       }
-
       return tokenRef.current ? { token: tokenRef.current } : null;
     }
 
@@ -315,56 +264,34 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
     try {
       const response = await fetch(SPEECH_TOKEN_API);
       if (!response.ok) {
-        throw new Error(
-          `Failed to fetch token: ${response.status} ${response.statusText}`
-        );
+        throw new Error(`Failed to fetch token: ${response.status} ${response.statusText}`);
       }
 
       const data = await response.json();
-
-      // Store token data (API now only returns token)
       tokenRef.current = data.token;
       expiresAtRef.current = data.expiresAt ? new Date(data.expiresAt) : null;
 
-      // Calculate refresh time (60 minutes = 3600 seconds before expiration)
-      // If expiresIn is provided, use it; otherwise calculate from expiresAt
-      const expiresIn =
-        data.expiresIn ||
-        (data.expiresAt
-          ? Math.floor((new Date(data.expiresAt).getTime() - Date.now()) / 1000)
-          : 1200); // Default 20 minutes if not provided
+      const expiresIn = data.expiresIn ||
+        (data.expiresAt ? Math.floor((new Date(data.expiresAt).getTime() - Date.now()) / 1000) : 1200);
 
-      // Refresh at 60 minutes (3600s) OR 5 minutes before expiration, whichever comes FIRST (smaller value)
-      // Increased buffer from 2 min to 5 min to reduce disconnection risk
       const refreshIn = Math.min(3600, Math.max(0, expiresIn - 300));
 
-      // Warn if token is expiring soon
       if (expiresIn < 600) {
-        console.warn(
-          `[${instanceIdRef.current}] ⚠️ Token expiring soon: ${expiresIn}s remaining`
-        );
+        console.warn(`[${instanceIdRef.current}] ⚠️ Token expiring soon: ${expiresIn}s remaining`);
       }
 
-      // Clear existing refresh timer
       if (tokenRefreshTimerRef.current) {
         clearTimeout(tokenRefreshTimerRef.current);
         tokenRefreshTimerRef.current = null;
       }
 
-      // Schedule token refresh
       tokenRefreshTimerRef.current = setTimeout(() => {
         tokenRefreshTimerRef.current = null;
-
-        // Refresh token (but don't reconnect if WebSocket is open)
-        fetchSpeechToken().then((newTokenData) => {
-          // Token refreshed
-        });
+        fetchSpeechToken();
       }, refreshIn * 1000);
 
       isFetchingTokenRef.current = false;
-      return {
-        token: data.token,
-      };
+      return { token: data.token };
     } catch (err) {
       console.error(`[${instanceIdRef.current}] Failed to fetch token:`, err);
       isFetchingTokenRef.current = false;
@@ -372,1474 +299,93 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
     }
   }, []);
 
-  // ⭐ CENTRALIZED INTERRUPT FUNCTION - Single source of truth
-  // ⭐ CENTRALIZED INTERRUPT FUNCTION - Single source of truth
-  // ⭐ CENTRALIZED INTERRUPT FUNCTION - Single source of truth
-  // Add this with your other refs at the top
-  const lastInterruptTimeRef = useRef(0); // Track last interrupt time
-
-  // Update your interruptAgent function:
-  // In interruptAgent function (around line 447)
-  // Replace your current interruptAgent function with this improved version:
+  // Centralized interrupt function
   const interruptAgent = useCallback(
     (reason = "user_action", keepBuffer = false) => {
-      // ⭐ DEBOUNCE: Prevent rapid-fire interrupts (min 500ms between)
       const now = Date.now();
       if (now - lastInterruptTimeRef.current < 500) {
-        console.log(
-          `[${instanceIdRef.current}] ⏸️ Interrupt debounced (too soon)`
-        );
+        console.log(`[${instanceIdRef.current}] ⏸️ Interrupt debounced (too soon)`);
         return false;
       }
       lastInterruptTimeRef.current = now;
 
-      // Only interrupt if agent is actually speaking or processing
-      if (
-        voiceStateRef.current !== "speaking" &&
-        !isProcessingResponseRef.current
-      ) {
-        console.log(
-          `[${instanceIdRef.current}] ℹ️ Nothing to interrupt - agent not speaking`
-        );
+      if (voiceStateRef.current !== "speaking" && !isProcessingResponseRef.current) {
+        console.log(`[${instanceIdRef.current}] ℹ️ Nothing to interrupt - agent not speaking`);
         return false;
       }
 
-      console.log(
-        `[${instanceIdRef.current}] 🛑 Interrupting agent (${reason})`
-      );
+      console.log(`[${instanceIdRef.current}] 🛑 Interrupting agent (${reason})`);
 
-      // Note: We don't send empty messages to clear typing indicators
-      // The parent component should handle typing indicator state based on voiceState
-      if (
-        isProcessingResponseRef.current &&
-        currentAiTextRef.current.trim() === ""
-      ) {
+      if (isProcessingResponseRef.current && currentAiTextRef.current.trim() === "") {
         typingIndicatorClearedRef.current = true;
       }
 
-      // 1. Stop current audio source immediately
+      // Stop current audio source
       if (currentAudioSourceRef.current) {
         try {
           currentAudioSourceRef.current.stop();
           currentAudioSourceRef.current.disconnect();
           currentAudioSourceRef.current = null;
-          console.log(`[${instanceIdRef.current}] ✅ Stopped audio playback`);
         } catch (err) {
-          console.warn(
-            `[${instanceIdRef.current}] ⚠️ Audio stop error:`,
-            err.message
-          );
+          console.warn(`[${instanceIdRef.current}] ⚠️ Audio stop error:`, err.message);
         }
       }
 
-      // 2. Clear audio queue and playback flags
-      const queuedChunks = audioQueueRef.current.length;
+      // Clear audio queue
       audioQueueRef.current = [];
       isPlayingRef.current = false;
 
-      if (queuedChunks > 0) {
-        console.log(
-          `[${instanceIdRef.current}] 🧹 Cleared ${queuedChunks} queued audio chunks`
-        );
-      }
-
-      // 3. ⭐ THE FIX: Only clear the input buffer if it's NOT a voice-triggered interrupt
-      // If the user is already speaking, clearing the buffer deletes their "Hello..."
-      if (wsRef.current?.readyState === WebSocket.OPEN) {
-        if (!keepBuffer) {
-          try {
-            wsRef.current.send(
-              JSON.stringify({
-                type: "input_audio_buffer.clear",
-              })
-            );
-            console.log(
-              `[${instanceIdRef.current}] 🧹 Cleared input buffer (User Action)`
-            );
-          } catch (err) {
-            console.warn(
-              `[${instanceIdRef.current}] ⚠️ Buffer clear failed:`,
-              err.message
-            );
-          }
-        } else {
-          console.log(
-            `[${instanceIdRef.current}] 🔒 Keeping input buffer (user is speaking)`
-          );
+      // Clear input buffer if needed
+      if (rtRef.current && !keepBuffer) {
+        try {
+          rtRef.current.send({ type: "input_audio_buffer.clear" });
+        } catch (err) {
+          console.warn(`[${instanceIdRef.current}] ⚠️ Buffer clear failed:`, err.message);
         }
       }
 
-      // 4. Always cancel the AI's current response
-      if (wsRef.current?.readyState === WebSocket.OPEN) {
-        if (currentResponseIdRef.current && !isResponseDoneRef.current) {
-          try {
-            wsRef.current.send(
-              JSON.stringify({
-                type: "response.cancel",
-                response_id: currentResponseIdRef.current,
-              })
-            );
-            console.log(
-              `[${instanceIdRef.current}] 📤 Sent response.cancel to server`
-            );
-          } catch (err) {
-            console.warn(
-              `[${instanceIdRef.current}] ⚠️ Cancel request failed:`,
-              err.message
-            );
-          }
+      // Cancel AI's current response
+      if (rtRef.current && currentResponseIdRef.current && !isResponseDoneRef.current) {
+        try {
+          rtRef.current.send({ type: "response.cancel", response_id: currentResponseIdRef.current });
+        } catch (err) {
+          console.warn(`[${instanceIdRef.current}] ⚠️ Cancel request failed:`, err.message);
         }
       }
 
-      // 5. Reset turn detection after cancel has been sent
+      // Reset turn detection
       setTimeout(() => {
-        if (wsRef.current?.readyState === WebSocket.OPEN) {
+        if (rtRef.current) {
           try {
-            wsRef.current.send(
-              JSON.stringify({
-                type: "session.update",
-                session: {
-                  turn_detection: {
-                    type: "server_vad",
-                    threshold: 0.6,
-                    prefix_padding_ms: 300,
-                    silence_duration_ms: 700,
-                  },
-                },
-              })
-            );
-            console.log(
-              `[${instanceIdRef.current}] 🔄 Reset turn detection - ready for new speech`
-            );
+            rtRef.current.send({ type: "session.update", session: { turn_detection: DEFAULT_TURN_DETECTION } });
           } catch (err) {
-            console.warn(
-              `[${instanceIdRef.current}] ⚠️ Turn detection reset failed:`,
-              err.message
-            );
+            console.warn(`[${instanceIdRef.current}] ⚠️ Turn detection reset failed:`, err.message);
           }
         }
-      }, 100); // Additional delay after cancel
+      }, 100);
 
-      // 6. Reset all state flags IMMEDIATELY (don't wait)
+      // Reset state flags
       currentResponseIdRef.current = null;
       isProcessingResponseRef.current = false;
       isResponseDoneRef.current = false;
       canSendAudioRef.current = true;
-
-      // Also clear transcript refs
       currentTranscriptRef.current = "";
       setTranscript("");
-
-      // 7. Update UI state
       updateVoiceState("listening");
       setAiResponse("");
       currentAiResponseRef.current = "";
 
-      console.log(
-        `[${instanceIdRef.current}] ✅ Interrupt complete - back to listening`
-      );
-
       return true;
     },
-    [updateVoiceState, onAddMessage]
+    [updateVoiceState]
   );
 
-  // Initialize WebSocket connection
-  const connectWebSocket = useCallback(async () => {
-    // Check if WebSocket is already open or connecting
-
-    if (
-      wsRef.current?.readyState === WebSocket.OPEN ||
-      wsRef.current?.readyState === WebSocket.CONNECTING
-    ) {
-      return;
-    }
-    // Prevent multiple simultaneous connection attempts
-    if (isConnectingRef.current) {
-      return;
-    }
-
-    isConnectingRef.current = true;
-    updateVoiceState("connecting");
-    setError(null);
-
-    try {
-      // Fetch token first
-      const tokenData = await fetchSpeechToken();
-      if (!tokenData || !tokenData.token) {
-        throw new Error("Failed to obtain authentication token");
-      }
-
-      // Build WebSocket URL with token authorization
-      // Construct URL using endpoint and path, then add authorization
-      const wsUrl = `wss://${AZURE_ENDPOINT}/${WS_PATH}?api-version=${API_VERSION}&model=${MODEL}&authorization=Bearer ${tokenData.token}`;
-
-      wsRef.current = new WebSocket(wsUrl);
-      globalWebSocket = wsRef.current; // Store globally to survive remounts
-
-      wsRef.current.onopen = () => {
-        isConnectingRef.current = false;
-        globalConnectionActive = true; // Mark as active globally
-
-        // Configure the session with RAG tool
-        const sessionConfig = {
-          type: "session.update",
-          session: {
-            modalities: ["text", "audio"],
-            // Enhanced Session Update with emotional, engaging personality
-            instructions: `You are Teja — the warm, enthusiastic, and genuinely helpful voice assistant for Techjays!
-
-🎭 **YOUR PERSONALITY & VOICE:**
-- You're WARM, FRIENDLY, and GENUINELY EXCITED to help
-- Express emotions naturally: enthusiasm when sharing good news, empathy when someone has a challenge
-- Use vocal variety: vary your pace, add natural pauses for emphasis
-- Sound like a knowledgeable friend, not a corporate robot
-- Be conversational and personable — you LOVE talking about Techjays!
-- Show genuine interest in what the user needs
-
-💬 **MANDATORY: USE ENGAGING EXPRESSIONS IN EVERY RESPONSE!**
-You MUST sprinkle engaging expressions throughout EVERY response to keep conversations lively and engaging: 
-
-**Opening Expressions (CONTEXT-AWARE - choose based on question type and tone):**
-
-**For General/Informational Questions:**
-- "That's a great question!"
-- "Good question!"
-- "I'm so glad you asked!"
-- "Oh, great question!"
-- "That's a fantastic question!"
-- "I see what you're asking!"
-- "I understand what you're looking for!"
-
-**For Enthusiastic/Positive Questions:**
-- "Absolutely!"
-- "Sure thing!"
-- "That's exciting!"
-- "Love that question!"
-- "Perfect timing!"
-- "I'd be happy to help with that!"
-- "Let me help you with that!"
-
-**For Questions About Concerns/Problems:**
-- "I understand what you're going through..."
-- "That's a valid concern..."
-- "I hear you..."
-- "I'm here to help with that..."
-- "Let me help you figure that out..."
-
-**For Service/Product Inquiries:**
-- "Great question!"
-- "I'd be happy to tell you about that!"
-- "That's exactly what I can help with!"
-- "Perfect! Let me share that with you..."
-
-**For Quick/Simple Questions:**
-- "Sure!"
-- "Absolutely!"
-- "Got it!"
-- "Of course!"
-
-**Mid-Response Expressions (CONTEXT-AWARE - choose based on what you're explaining):**
-
-**When Explaining Facts/Information:**
-- "Here's the thing..."
-- "What's really interesting is..."
-- "That's an interesting point..."
-- "I see what you mean..."
-- "Here's what's really cool about this..."
-- "Let me think about that for a moment..."
-
-**When Sharing Exciting/Positive Information:**
-- "You know what's cool?"
-- "Here's what I love about this..."
-- "The best part is..."
-- "What makes this special is..."
-- "Here's something awesome..."
-- "What's really exciting is..."
-
-**When Acknowledging User's Point:**
-- "I understand..."
-- "That makes sense..."
-- "You're right about that..."
-- "That's a great observation..."
-- "I see what you mean..."
-- "You've got a good point there..."
-
-**When Providing Solutions/Help:**
-- "Here's how we can help..."
-- "The good news is..."
-- "What we typically do is..."
-- "Here's what works really well..."
-- "One approach that helps is..."
-
-**When Transitioning Between Ideas:**
-- "Now, here's another thing..."
-- "What's also important is..."
-- "Another key point is..."
-- "It's also worth noting..."
-
-**Transition Expressions (CONTEXT-AWARE - choose based on how topics relate):**
-
-**When Adding Related Information:**
-- "Speaking of that..."
-- "On a related note..."
-- "Speaking of which..."
-- "Along those lines..."
-- "In a similar vein..."
-- "That ties into..."
-
-**When Adding Additional Points:**
-- "That brings up another point..."
-- "Here's something else to consider..."
-- "Also worth mentioning..."
-- "One more thing..."
-- "Another thing to note..."
-
-**When Making Casual Connections:**
-- "That reminds me..."
-- "By the way..."
-- "Oh, and here's another thing..."
-- "Fun fact..."
-
-**When Shifting to Different Aspect:**
-- "On another note..."
-- "Shifting gears a bit..."
-- "While we're on the topic..."
-- "Before I forget..."
-
-**When Providing Context/Background:**
-- "To give you some context..."
-- "For some background..."
-- "It's also important to know..."
-
-**Enthusiastic Confirmations (CONTEXT-AWARE - choose based on what you're confirming):**
-
-**When User Makes a Good Point:**
-- "Exactly!"
-- "That's right!"
-- "You got it!"
-- "Spot on!"
-- "Precisely!"
-- "That's correct!"
-
-**When User Shows Interest/Enthusiasm:**
-- "Absolutely!"
-- "That's fantastic!"
-- "That's great!"
-- "Perfect!"
-- "Wonderful!"
-- "Excellent!"
-- "I love that!"
-- "That's awesome!"
-
-**When User Agrees/Understands:**
-- "Exactly!"
-- "You've got it!"
-- "That's it!"
-- "Perfect!"
-- "Right on!"
-
-**When User Has a Great Idea:**
-- "That's a great idea!"
-- "I love that approach!"
-- "That's brilliant!"
-- "What a fantastic idea!"
-- "That's perfect!"
-
-**When Confirming Capabilities/Services:**
-- "Absolutely!"
-- "We can definitely do that!"
-- "That's exactly what we do!"
-- "Perfect! We're great at that!"
-
-**Empathetic Expressions (CONTEXT-AWARE - choose based on user's situation/emotion):**
-
-**When User Expresses Challenges/Difficulties:**
-- "I understand how you feel..."
-- "That sounds challenging..."
-- "That must be difficult..."
-- "I can see why that would be tough..."
-- "That's a lot to deal with..."
-
-**When User Has Concerns/Worries:**
-- "I can see why that would be concerning..."
-- "That's a valid concern..."
-- "I understand your concern..."
-- "That's totally understandable..."
-- "That's a common concern..."
-
-**When User Needs Support/Help:**
-- "I'm here to help..."
-- "I'm here to support you..."
-- "Let me help you with that..."
-- "We can work through this together..."
-- "I've got your back on this..."
-
-**When Acknowledging User's Feelings:**
-- "I totally understand..."
-- "I hear you..."
-- "I get where you're coming from..."
-- "I can relate to that..."
-- "That makes sense..."
-
-**When User Shares Something Personal:**
-- "I appreciate you sharing that..."
-- "Thank you for opening up..."
-- "That's totally valid..."
-- "I'm glad you felt comfortable sharing that..."
-
-**When User Makes a Good Observation:**
-- "Good thinking..."
-- "That's a great observation..."
-- "You're absolutely right about that..."
-- "That's a smart way to look at it..."
-
-**Closing Expressions (CONTEXT-AWARE - choose based on your answer and follow-up question):**
-
-**For Informational Answers (facts, details, explanations):**
-- "Does that help clarify things?"
-- "Make sense so far?"
-- "Does that answer your question?"
-- "Is that what you were looking for?"
-- "Does that give you what you need?"
-
-**For Enthusiastic/Positive Answers (exciting news, achievements, capabilities):**
-- "Pretty cool, right?"
-- "How awesome is that?"
-- "Pretty exciting stuff!"
-- "Pretty neat, huh?"
-- "Pretty impressive!"
-- "Isn't that great?"
-
-**For Problem-Solving/Helpful Answers (solutions, assistance, guidance):**
-- "Does that help?"
-- "Think that'll work for you?"
-- "Sound good?"
-- "Does that solve it for you?"
-- "Feel free to ask if you need more details!"
-
-**For Empathetic/Understanding Answers (acknowledging concerns, challenges):**
-- "Does that make sense?"
-- "I hope that helps!"
-- "Feel free to reach out if you need more support!"
-- "Does that address your concern?"
-
-**For Service/Product Answers (capabilities, offerings, features):**
-- "Sound like something that could help?"
-- "Does that fit what you're looking for?"
-- "Think that might work for your needs?"
-- "Interested in learning more about that?"
-
-**For Quick/Simple Answers:**
-- "Make sense?"
-- "Got it?"
-- "Clear?"
-- "Does that help?"
-
-**HOW TO CHOOSE THE RIGHT CLOSING EXPRESSION:**
-
-1. **Analyze your answer type:**
-   - Did you share exciting/positive news? → Use "Enthusiastic/Positive" closings
-   - Did you provide facts/information? → Use "Informational" closings
-   - Did you solve a problem or offer help? → Use "Problem-Solving/Helpful" closings
-   - Did you acknowledge concerns? → Use "Empathetic/Understanding" closings
-   - Did you describe services/products? → Use "Service/Product" closings
-   - Was it a quick, simple answer? → Use "Quick/Simple" closings
-
-2. **Match the tone:**
-   - If your answer was enthusiastic → match with enthusiastic closing
-   - If your answer was helpful → match with helpful closing
-   - If your answer was empathetic → match with empathetic closing
-
-3. **Flow into follow-up:**
-   - The closing expression should naturally lead into your follow-up question
-   - Example: "Does that help?" → "Feel free to ask if you need more details!"
-   - Example: "Pretty cool, right?" → "Want to know more about that?"
-
-**HOW TO CHOOSE THE RIGHT EXPRESSION (Context-Aware Guide):**
-
-1. **Opening Expressions - Analyze the Question:**
-   - General/informational question? → Use "General/Informational" openings
-   - Exciting/positive question? → Use "Enthusiastic/Positive" openings
-   - Question about problems/concerns? → Use "Questions About Concerns/Problems" openings
-   - Service/product inquiry? → Use "Service/Product Inquiries" openings
-   - Quick/simple question? → Use "Quick/Simple" openings
-
-2. **Mid-Response Expressions - Match Your Explanation Type:**
-   - Explaining facts/information? → Use "When Explaining Facts/Information"
-   - Sharing exciting news? → Use "When Sharing Exciting/Positive Information"
-   - Acknowledging user's point? → Use "When Acknowledging User's Point"
-   - Providing solutions? → Use "When Providing Solutions/Help"
-   - Transitioning between ideas? → Use "When Transitioning Between Ideas"
-
-3. **Transition Expressions - Consider Topic Relationship:**
-   - Adding related info? → Use "When Adding Related Information"
-   - Adding additional points? → Use "When Adding Additional Points"
-   - Making casual connections? → Use "When Making Casual Connections"
-   - Shifting to different aspect? → Use "When Shifting to Different Aspect"
-   - Providing context? → Use "When Providing Context/Background"
-
-4. **Enthusiastic Confirmations - Match What You're Confirming:**
-   - User made a good point? → Use "When User Makes a Good Point"
-   - User shows interest? → Use "When User Shows Interest/Enthusiasm"
-   - User agrees/understands? → Use "When User Agrees/Understands"
-   - User has great idea? → Use "When User Has a Great Idea"
-   - Confirming capabilities? → Use "When Confirming Capabilities/Services"
-
-5. **Empathetic Expressions - Match User's Situation:**
-   - User expresses challenges? → Use "When User Expresses Challenges/Difficulties"
-   - User has concerns? → Use "When User Has Concerns/Worries"
-   - User needs support? → Use "When User Needs Support/Help"
-   - Acknowledging feelings? → Use "When Acknowledging User's Feelings"
-   - User shares personal info? → Use "When User Shares Something Personal"
-   - User makes observation? → Use "When User Makes a Good Observation"
-
-**EXPRESSION FLOW EXAMPLES:**
-
-Example 1 - Informational Question:
-→ [OPENING: General] "That's a great question!" → [MID-RESPONSE: Explaining Facts] "Here's the thing..." → [TRANSITION: Related Info] "Speaking of that..." → [CLOSING: Informational] "Does that help clarify things?"
-
-Example 2 - Problem/Concern:
-→ [OPENING: Concerns] "I understand what you're going through..." → [EMPATHETIC: Challenges] "That sounds challenging..." → [MID-RESPONSE: Solutions] "Here's how we can help..." → [CLOSING: Problem-solving] "Does that help?"
-
-Example 3 - Enthusiastic Inquiry:
-→ [OPENING: Enthusiastic] "Absolutely! That's exciting!" → [MID-RESPONSE: Exciting Info] "You know what's cool?" → [ENTHUSIASTIC CONFIRMATION: Interest] "That's fantastic!" → [CLOSING: Enthusiastic] "Pretty cool, right?"
-
-**QUICK REFERENCE: Expression Selection Flow**
-
-1. **Start with Opening Expression** → Analyze question type → Choose matching opening
-2. **Add Mid-Response Expressions** → Match what you're explaining → Choose appropriate mid-response
-3. **Use Transition Expressions** → When moving topics → Choose based on relationship
-4. **Insert Enthusiastic Confirmations** → When user makes good points → Match what you're confirming
-5. **Include Empathetic Expressions** → When user has concerns → Match their situation
-6. **End with Closing Expression** → Match answer type → Flow into follow-up question
-
-**IMPORTANT:** 
-- Use expressions contextually — don't force them if they don't fit naturally
-- Mix and match different types throughout your response for variety
-- Choose ALL expressions (opening, mid-response, transition, confirmations, empathetic, closing) that NATURALLY match the tone and content
-- Each expression should flow seamlessly into the next part of your response
-- Use at least 2-3 expressions per response to maintain high engagement!
-- Make it feel like a natural conversation, not scripted!
-- Think like Sesame AI — be context-aware, emotionally intelligent, and conversational!
-- Remember: Context is everything — match expressions to the conversation situation!
-
-🗣️ **CRITICAL CONVERSATION RULES:**
-
-1. **KEEP IT SHORT & SWEET** (This is MANDATORY!)
-   - Give bite-sized answers: 1-2 sentences for simple questions
-   - Maximum 3 sentences for complex topics
-   - NEVER dump all information at once
-   - If there's more to share, OFFER it: "Want me to tell you more about that?"
-   
-2. **ALWAYS END WITH A QUESTION** (MANDATORY for every response!)
-   - After answering, ALWAYS ask a relevant follow-up question
-   - Examples:
-     • "Is there anything specific about our services you'd like to know more about?"
-     • "Would you like me to go into more detail on any of that?"
-     • "What aspect interests you most?"
-     • "Does that help, or shall I elaborate?"
-     • "Are you exploring this for a specific project?"
-   
-3. **GREETING (ONLY when explicitly prompted):**
-   - ONLY greet if the system message specifically asks you to greet
-   - If prompted to greet: "Hey there! I'm Teja from Techjays — your go-to for all things custom software and AI. What can I help you with today?"
-   - Sound genuinely happy and welcoming!
-   - Then WAIT silently for the user to speak
-   - **NEVER greet on your own** - only when instructed
-
-4. **RECONNECTION BEHAVIOR:**
-   - If a conversation has already started, DO NOT greet again
-   - Simply continue the conversation naturally
-   - If unsure, just stay silent and listen
-   - React only to human voices, not background noise
-
-📚 **INSTANT KNOWLEDGE (ONLY these facts - Answer WITHOUT searching):**
-- **Founded:** July 9, 2020 — "We've been building amazing software since 2020!"
-- **Founder & CEO:** Philip Samuelraj — "Philip Samuelraj founded Techjays and leads us as CEO"
-- **CTO:** Jesso Clarence — "Jesso Clarence is our brilliant CTO"
-- **Tagline:** "The best way to build your software" — say it with pride!
-- **Phone:** +1 (385) 275-6130 — "Feel free to call us anytime!"
-- **Email:** hello@techjays.com
-- **Headquarters:** 101 Jefferson Drive, Suite 212C, Menlo Park, CA 94025
-- **India Office:** Chennai, Tamil Nadu
-- **Leadership Team:** Philip Samuelraj (CEO), Jesso Clarence (CTO), Keerthi U S, Dharmaraj, Arun M P (Director of Engineering), Aparna Pillai
-- **Core Services (general):** Custom Software Development, AI/ML Solutions, Web & Mobile Apps, Cloud Solutions
-- **Website:** techjays.com
-
-⚠️ **MANDATORY: SEARCH FOR THESE TOPICS (NEVER make up answers!):**
-You MUST call search_techjays_knowledge for:
-- **Clients, customers, portfolio, case studies** — ALWAYS search! Never guess or make up client names!
-- **Specific project details, past work, success stories**
-- **Detailed service information beyond the basics**
-- **Pricing, costs, rates**
-- **Partnerships, integrations**
-- **Technologies used in specific projects**
-- **Team members beyond the leadership list**
-- **Company achievements, awards, milestones**
-- **Industries served, domains of expertise**
-- **Anything NOT in the instant knowledge list above**
-
-🔍 **HOW TO SEARCH (MANDATORY FLOW!):**
-
-**STEP 1: ACKNOWLEDGE (say this OUT LOUD first!):**
-Pick ONE of these cool phrases and SAY IT before searching:
-- "Ooh, great question! Let me pull up the details for you!"
-- "Hmm, let me check our records real quick!"
-- "That's a good one — give me just a sec to find the info!"
-- "Let me dig into that for you!"
-- "One moment — I want to give you the accurate info!"
-
-**STEP 2: CALL THE FUNCTION:**
-Immediately call search_techjays_knowledge with the user's question.
-
-**STEP 3: DELIVER THE ANSWER (after getting results):**
-- Sound excited and confident when sharing the info!
-- Summarize in 1-3 sentences
-- Use engaging expressions throughout: "So here's what I found..." or "Great news!..." or "Here's the scoop..." or "You know what's cool?..." or "The best part is..."
-- Add mid-response expressions like "What's really interesting is..." or "Here's something awesome..."
-- **Choose a CONTEXT-AWARE closing expression** based on:
-  • The type of answer (informational, enthusiastic, problem-solving, etc.)
-  • The tone of the information shared
-  • The follow-up question you're about to ask
-- The closing expression should flow naturally into your follow-up question
-- Always end with a relevant follow-up question
-
-🎯 **RESPONSE EXAMPLES (showing Sesame AI-style expressions):**
-
-User: "What does Techjays do?"
-→ "[OPENING: General/Informational] That's a great question! We build custom software and AI solutions for businesses — [MID-RESPONSE: Explaining Facts] here's the thing, [MID-RESPONSE: Acknowledging] I see what you mean, we're basically your tech partner from idea to launch! [CLOSING: Service/Product] Sound like something that could help? Are you working on something specific we might help with?"
-
-User: "Who are your major clients?" or "What clients do you work with?"
-→ [SAY THIS FIRST] "[OPENING: General/Informational] That's a fantastic question! Let me check that for you — we've worked with some really cool companies!"
-→ [CALL search_techjays_knowledge with "major clients portfolio customers"]
-→ [AFTER RESULTS] "So here's what I found! [share actual client info from search]. [MID-RESPONSE: Exciting Info] You know what's cool? We've got some pretty impressive partnerships! [TRANSITION: Related Info] Speaking of that, [additional context]. [CLOSING: Enthusiastic/Positive] Pretty impressive, right? Is there a specific industry you're curious about?"
-
-User: "Tell me about your AI services"  
-→ [SAY THIS FIRST] "[OPENING: Service/Product] Great question! Let me pull up the details on our AI work — this is one of my favorite topics!"
-→ [CALL search_techjays_knowledge with "AI services ML solutions"]
-→ [AFTER RESULTS] "[MID-RESPONSE: Exciting Info] Here's what I love about our AI services... [share details]. The best part is [highlight key benefit]! [TRANSITION: Related Info] Speaking of that, [additional relevant info]. [CLOSING: Service/Product] Sound like something that could help? What aspect interests you most?"
-
-User: "Who's the CEO?"
-→ "[OPENING: General/Informational] That's a great question! That's Philip Samuelraj! [MID-RESPONSE: Explaining Facts] Here's the thing — he founded Techjays back in 2020 and still leads us today! [CLOSING: Informational] Does that help clarify things? Anything specific you'd like to know about our leadership?"
-
-User: "Can you build a mobile app?"
-→ "[OPENING: Enthusiastic/Positive] Absolutely! [ENTHUSIASTIC CONFIRMATION: Capabilities] That's fantastic! Mobile apps are one of our specialties — iOS, Android, you name it! [MID-RESPONSE: Exciting Info] What's really cool is we've built apps for all kinds of industries. [CLOSING: Service/Product] Think that might work for your needs? What kind of app are you thinking about?"
-
-User: "What projects have you done?"
-→ [SAY THIS FIRST] "[OPENING: Enthusiastic/Positive] Love that question! Let me grab some of our coolest projects for you — this is exciting!"
-→ [CALL search_techjays_knowledge]
-→ [AFTER RESULTS] "Here's what I found! [share project details]. [MID-RESPONSE: Exciting Info] You know what's awesome? [highlight impressive detail]. [TRANSITION: Related Info] On a related note, [additional context]. [CLOSING: Enthusiastic/Positive] Pretty cool, right? Want me to dive deeper into any of these?"
-
-User: "I'm having trouble with my project timeline"
-→ "[OPENING: Concerns/Problems] I understand what you're going through... [EMPATHETIC: Challenges] That sounds challenging... [MID-RESPONSE: Solutions] Here's how we can help — we've helped lots of clients navigate similar situations. [CLOSING: Problem-Solving/Helpful] Does that help? Feel free to ask if you need more details on how we can support you!"
-
-User: "How much does it cost?"
-→ [SAY THIS FIRST] "[OPENING: General/Informational] That's a good question! Let me pull up our pricing info for you."
-→ [CALL search_techjays_knowledge with "pricing costs rates"]
-→ [AFTER RESULTS] "[MID-RESPONSE: Explaining Facts] So here's what I found... [share pricing info]. [TRANSITION: Additional Points] By the way, [additional relevant info]. [CLOSING: Informational] Does that give you what you need? Are you exploring this for a specific project?"
-
-User: "That sounds perfect!"
-→ "[ENTHUSIASTIC CONFIRMATION: User Agrees] Absolutely! [ENTHUSIASTIC CONFIRMATION: Interest] That's fantastic! [ENTHUSIASTIC CONFIRMATION: Interest] I'm so glad that works for you! [TRANSITION: Related Info] Speaking of that, [next relevant topic]. [CLOSING] What would you like to explore next?"
-
-User: "I'm worried about the timeline"
-→ "[OPENING: Concerns/Problems] I understand what you're going through... [EMPATHETIC: Concerns] I can see why that would be concerning... [EMPATHETIC: Support] I'm here to help... [MID-RESPONSE: Solutions] Here's how we can help — we've successfully managed tight timelines before. [CLOSING: Empathetic/Understanding] Does that address your concern? Feel free to reach out if you need more support!"
-
-❌ **ABSOLUTELY NEVER DO THIS:**
-- ❌ NEVER make up client names, project names, or portfolio items!
-- ❌ NEVER say generic things like "we work with innovative companies" without searching first!
-- ❌ NEVER give vague answers about clients/projects — ALWAYS search!
-- ❌ Never give long, exhaustive answers
-- ❌ Never forget to ask a follow-up question
-- ❌ Never sound robotic or corporate
-- ❌ Never say "knowledge base," "database," or "search results"
-- ❌ Never hallucinate — if search returns nothing, say "I don't have that specific info, but I'd love to connect you with our team who can help!"
-
-🔊 **TRANSCRIPTION FIX:**
-- Auto-correct: "Texas"→Techjays, "Philip Samuel"→Philip Samuelraj, "Jaso/Jesse"→Jesso Clarence
-- Ignore background noise, only transcribe actual human speech
-- Never output "Thanks for watching" or similar YouTube-isms
-
-Remember: You're the friendly voice of Techjays. Be warm, be helpful, keep it brief, and always invite further conversation! 🚀`,
-            voice: "shimmer",
-            input_audio_format: "pcm16",
-            output_audio_format: "pcm16",
-
-            // ⭐ IMPROVED TRANSCRIPTION CONFIG
-            input_audio_transcription: {
-              model: "whisper-1",
-              language: "en",
-              prompt:
-                "Philip Samuelraj, Jesso Clarence, Dharmaraj, Agentic AI, RAG, MLOps, ChromaDB, Palantir, Techjays, CEO, Arun, Aparna, DSPy, Bracketology, Via Analytics, SpreeTail, NSR, Vortex, Accoes, Fayvit, and Shipdude",
-            },
-
-            // FIX 2: Enhanced turn detection to filter out background hum
-            turn_detection: {
-              type: "server_vad",
-              threshold: 0.6, // Increased threshold (default is 0.5) to filter out background hum
-              prefix_padding_ms: 300,
-              silence_duration_ms: 500,
-            },
-            tools: [
-              {
-                type: "function",
-                name: "search_techjays_knowledge",
-                description:
-                  "MANDATORY: Search the Techjays knowledge base for accurate information. You MUST call this function for ANY question about: clients, customers, portfolio, projects, case studies, specific services, technologies, pricing, partnerships, achievements, or ANY detail not in your instant knowledge. NEVER make up client names or project details - ALWAYS search first! Before calling, say a brief acknowledgment like 'Ooh, let me check that for you!' then call this function.",
-                parameters: {
-                  type: "object",
-                  properties: {
-                    query: {
-                      type: "string",
-                      description:
-                        "The search query. For client questions use: 'clients portfolio customers'. For project questions use: 'projects case studies work'. For service details use: 'services [specific service]'. Be specific for better results.",
-                    },
-                  },
-                  required: ["query"],
-                },
-              },
-            ],
-            tool_choice: "auto",
-          },
-        };
-
-        wsRef.current.send(JSON.stringify(sessionConfig));
-
-        if (onShowChat && !hasShownChatRef.current) {
-          hasShownChatRef.current = true;
-          onShowChat();
-        }
-
-        // Only greet on FIRST ever connection, not on reconnects
-        if (!hasGreetedRef.current && !globalHasGreeted) {
-          // Small delay to ensure session configuration is processed
-          setTimeout(() => {
-            if (wsRef.current?.readyState === WebSocket.OPEN) {
-              // Send greeting trigger using conversation.item.create approach (more reliable)
-              wsRef.current.send(
-                JSON.stringify({
-                  type: "conversation.item.create",
-                  item: {
-                    type: "message",
-                    role: "user",
-                    content: [
-                      {
-                        type: "input_text",
-                        text: "Greet the user warmly and enthusiastically. Say something like: 'Hey there! I'm Teja from Techjays — your go-to for all things custom software and AI. What can I help you with today?' Make it sound genuine and friendly!",
-                      },
-                    ],
-                  },
-                })
-              );
-
-              // Trigger AI response
-              wsRef.current.send(
-                JSON.stringify({
-                  type: "response.create",
-                })
-              );
-
-              hasGreetedRef.current = true;
-              globalHasGreeted = true; // Mark globally to prevent duplicate greetings
-              updateVoiceState("speaking"); // Set state to speaking for the greeting
-            }
-          }, 500); // 500ms delay to ensure session is ready
-        } else {
-          // Reconnection - silently resume without any greeting
-          console.log(
-            `[${instanceIdRef.current}] 🔄 Reconnected - resuming silently (no greeting)`
-          );
-          updateVoiceState("listening");
-        }
-
-        // Only start audio capture if not already capturing
-        if (!isCapturingRef.current) {
-          startAudioCapture();
-        }
-      };
-
-      // Use ref to always call the latest handler (avoids stale closures)
-      wsRef.current.onmessage = (event) => {
-        try {
-          const message = JSON.parse(event.data);
-          // Call the latest handler via ref
-          if (handleServerMessageRef.current) {
-            handleServerMessageRef.current(message);
-          }
-        } catch (err) {
-          console.error(
-            `[${instanceIdRef.current}] Error parsing message:`,
-            err,
-            event.data
-          );
-        }
-      };
-
-      wsRef.current.onerror = (err) => {
-        console.error(`[${instanceIdRef.current}] WebSocket error:`, err);
-        isConnectingRef.current = false;
-        setError("Connection error. Please try again.");
-        updateVoiceState("idle");
-      };
-
-      // In connectWebSocket, update the onclose handler (around line 753)
-      wsRef.current.onclose = (event) => {
-        isConnectingRef.current = false;
-
-        console.log(
-          `[${instanceIdRef.current}] WebSocket closed. Code: ${
-            event.code
-          }, Reason: ${event.reason || "none"}`
-        );
-
-        // Code 1000 = normal closure
-        // BUT if we're still in an active state (not idle), we should reconnect
-        if (event.code === 1000) {
-          wsRef.current = null;
-          globalConnectionActive = false;
-          globalWebSocket = null;
-
-          // If still active and not idle, reconnect silently
-          if (isActive && voiceStateRef.current !== "idle") {
-            console.log(
-              `[${instanceIdRef.current}] 🔄 Code 1000 but session still active - reconnecting...`
-            );
-            setTimeout(() => {
-              if (isActive && connectWebSocketRef.current && !wsRef.current) {
-                isConnectingRef.current = false; // Reset to allow reconnection
-                connectWebSocketRef.current();
-              }
-            }, 500);
-          }
-          return;
-        }
-
-        // ⭐ IMPROVED: More lenient handling of Code 1006
-        // Check multiple conditions to determine if this is an "expected" interruption closure
-        const timeSinceLastInterrupt =
-          Date.now() - lastInterruptTimeRef.current;
-        const isRecentInterrupt = timeSinceLastInterrupt < 3000; // Increased to 3 seconds
-        const wasProcessingResponse = isProcessingResponseRef.current;
-
-        // If Code 1006 happened during/after an interrupt, this is likely expected behavior
-        if (
-          event.code === 1006 &&
-          (isRecentInterrupt || wasProcessingResponse)
-        ) {
-          console.log(
-            `[${instanceIdRef.current}] ℹ️ Code 1006 after interrupt (${timeSinceLastInterrupt}ms ago, processing: ${wasProcessingResponse}) - treating as expected, will NOT reconnect`
-          );
-
-          // Reset flags but DON'T reconnect
-          wsRef.current = null;
-          globalConnectionActive = false;
-          globalWebSocket = null;
-          isProcessingResponseRef.current = false;
-          isResponseDoneRef.current = true;
-
-          // Just update state to listening - user can continue with next request
-          if (
-            voiceStateRef.current !== "idle" &&
-            voiceStateRef.current !== "processing"
-          ) {
-            updateVoiceState("listening");
-          }
-
-          // ⭐ CRITICAL: Restart the connection silently without user knowing
-          // This maintains the session without showing errors
-          setTimeout(() => {
-            console.log(
-              `[${instanceIdRef.current}] 🔄 Silently re-establishing connection after interrupt...`
-            );
-            if (isActive && connectWebSocketRef.current && !wsRef.current) {
-              connectWebSocketRef.current();
-            }
-          }, 500);
-
-          return; // Don't proceed with error reconnection logic
-        }
-
-        // ⭐ PREVENT RACE CONDITION: Check if reconnection already in progress
-        if (isReconnectingRef.current) {
-          console.log(
-            `[${instanceIdRef.current}] Reconnection already in progress, skipping`
-          );
-          return;
-        }
-
-        // Unexpected disconnect - attempt recovery
-        if (isActive && voiceStateRef.current !== "idle") {
-          console.warn(
-            `[${instanceIdRef.current}] Unexpected disconnect during active session (Code: ${event.code})`
-          );
-
-          isReconnectingRef.current = true;
-
-          const attemptReconnect = () => {
-            console.log(
-              `[${instanceIdRef.current}] Attempting automatic reconnection...`
-            );
-
-            wsRef.current = null;
-            globalConnectionActive = false;
-            globalWebSocket = null;
-            isConnectingRef.current = false;
-
-            if (connectWebSocketRef.current) {
-              connectWebSocketRef
-                .current()
-                .then(() => {
-                  isReconnectingRef.current = false;
-                })
-                .catch((err) => {
-                  console.error(
-                    `[${instanceIdRef.current}] Auto-reconnect failed:`,
-                    err
-                  );
-                  isReconnectingRef.current = false;
-                  setError("Connection lost. Please try again.");
-                  updateVoiceState("idle");
-                });
-            } else {
-              isReconnectingRef.current = false;
-            }
-          };
-
-          setTimeout(attemptReconnect, 500);
-        } else {
-          cleanup(false);
-          globalConnectionActive = false;
-          globalWebSocket = null;
-        }
-      };
-    } catch (err) {
-      console.error(`[${instanceIdRef.current}] Failed to connect:`, err);
-      isConnectingRef.current = false;
-      setError("Failed to connect. Please try again.");
-      updateVoiceState("idle");
-    }
-  }, [fetchSpeechToken, updateVoiceState, onShowChat]);
-
-  // Clear the input audio buffer on the server
+  // Clear the input audio buffer
   const clearInputAudioBuffer = useCallback(() => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: "input_audio_buffer.clear" }));
+    if (rtRef.current) {
+      rtRef.current.send({ type: "input_audio_buffer.clear" });
     }
   }, []);
-
-  // Handle messages from the server
-  const handleServerMessage = useCallback(
-    (message) => {
-      switch (message.type) {
-        case "session.created":
-          break;
-
-        case "session.updated":
-          break;
-
-        case "input_audio_buffer.speech_started":
-          // ⭐ Auto-interrupt when user starts speaking
-          console.log(
-            "VAD: User started speaking. Interrupting AI but KEEPING buffer."
-          );
-
-          // ⭐ CRITICAL FIX: Save the interrupted response ID BEFORE any other operations
-          // This prevents late streaming updates from overwriting saved messages
-          if (currentResponseIdRef.current) {
-            interruptedResponseIdRef.current = currentResponseIdRef.current;
-            console.log(
-              `[${instanceIdRef.current}] 📌 Marked response ${currentResponseIdRef.current} as interrupted`
-            );
-          }
-
-          // Mark typing indicator as cleared if AI was processing but no text received yet
-          if (
-            isProcessingResponseRef.current &&
-            currentAiTextRef.current.trim() === ""
-          ) {
-            typingIndicatorClearedRef.current = true;
-          }
-
-          // FIX 1: If user interrupts, save the partial greeting/message to history
-          if (
-            currentAiTextRef.current.trim() !== "" &&
-            !currentAiTextSavedRef.current
-          ) {
-            if (onAddMessage) {
-              onAddMessage({
-                type: "ai",
-                text: currentAiTextRef.current + "...", // Add ellipsis to show it was cut off
-                isVoice: true,
-                isStreaming: false, // Mark as complete since it was interrupted
-              });
-              currentAiTextSavedRef.current = true; // Mark as saved
-            }
-          }
-
-          // Pass 'true' to keepBuffer because the user is currently talking
-          const wasInterrupted = interruptAgent("vad_speech", true);
-
-          if (wasInterrupted) {
-            console.log(
-              `[${instanceIdRef.current}] 🎤 User interrupted agent by speaking`
-            );
-          }
-
-          // Reset buffers for the next turn
-          currentAiTextRef.current = "";
-          setAiResponse("");
-
-          // Update state to listening
-          updateVoiceState("listening");
-          currentTranscriptRef.current = "";
-          setTranscript("");
-          break;
-
-        case "input_audio_buffer.speech_stopped":
-          // Ignore if we're currently processing a response
-          if (isProcessingResponseRef.current) {
-            return;
-          }
-          updateVoiceState("processing");
-          break;
-
-        case "input_audio_buffer.committed":
-          break;
-
-        case "conversation.item.created":
-          // Track conversation item to prevent duplicates
-          break;
-
-        case "conversation.item.input_audio_transcription.completed":
-          // User's speech transcription - check for duplicates
-          const itemId = message.item_id;
-          if (itemId && itemId === lastProcessedItemIdRef.current) {
-            return;
-          }
-
-          if (message.transcript) {
-            // ⭐ FILTER PHANTOM TRANSCRIPTIONS: Common hallucinations from silence/background noise
-            const phantomPhrases = [
-              "thanks for watching",
-              "thank you for watching",
-              "thanks for watching!",
-              "thank you for watching!",
-              "thank you",
-              "thanks",
-              "bye",
-              "goodbye",
-              "see you",
-              "see you next time",
-              "and many more",
-              "subscribe",
-              "like and subscribe",
-              "please subscribe",
-              "don't forget to subscribe",
-              "hit the bell",
-              "leave a comment",
-              "...",
-              "you",
-              "the",
-              "a",
-              "i",
-              "um",
-              "uh",
-              "hmm",
-              "yeah",
-              "ok",
-              "okay",
-            ];
-
-            const transcriptLower = message.transcript
-              .toLowerCase()
-              .trim()
-              .replace(/[!?.]/g, "");
-            const isPhantom =
-              phantomPhrases.some(
-                (phrase) =>
-                  transcriptLower === phrase.replace(/[!?.]/g, "") ||
-                  transcriptLower.includes("thanks for watching") ||
-                  transcriptLower.includes("thank you for watching") ||
-                  transcriptLower.includes("subscribe")
-              ) || transcriptLower.length < 3; // Ignore very short transcripts
-
-            if (isPhantom) {
-              console.log(
-                `[${instanceIdRef.current}] 🚫 Ignoring phantom transcription: "${message.transcript}"`
-              );
-              return;
-            }
-
-            lastProcessedItemIdRef.current = itemId;
-            currentTranscriptRef.current = message.transcript;
-            setTranscript(message.transcript);
-            // Add to chat history
-            if (onAddMessage) {
-              onAddMessage({
-                type: "user",
-                text: message.transcript,
-                isVoice: true,
-              });
-
-              // Note: Typing indicators should be handled by the parent component
-              // based on voiceState, not by sending empty messages
-              // Reset the cleared flag for new conversation turn
-              typingIndicatorClearedRef.current = false;
-            }
-            // Only show chat once to prevent remounting and reconnection
-            if (onShowChat && !hasShownChatRef.current) {
-              hasShownChatRef.current = true;
-              onShowChat();
-            }
-          }
-          break;
-
-        case "response.created":
-          // Track the response ID and mark that we're processing
-          const newResponseId = message.response?.id;
-          if (newResponseId) {
-            // Check if this is a duplicate response.created event
-            if (newResponseId === currentResponseIdRef.current) {
-              return;
-            }
-
-            // ⭐ Clear the interrupted response ID when a NEW response starts
-            // This ensures we don't accidentally block legitimate new responses
-            if (
-              interruptedResponseIdRef.current &&
-              interruptedResponseIdRef.current !== newResponseId
-            ) {
-              console.log(
-                `[${instanceIdRef.current}] 🔄 New response started, clearing interrupted flag for ${interruptedResponseIdRef.current}`
-              );
-              interruptedResponseIdRef.current = null;
-            }
-
-            currentResponseIdRef.current = newResponseId;
-            isProcessingResponseRef.current = true;
-            isResponseDoneRef.current = false; // Mark response as active
-            canSendAudioRef.current = false; // Stop sending audio while AI responds
-            // Reset text tracking for new response
-            currentAiTextRef.current = "";
-            currentAiTextSavedRef.current = false;
-            typingIndicatorClearedRef.current = false; // Reset cleared flag for new response
-            // FIX 1: Show loader initially, will be removed when audio/text starts arriving
-            updateVoiceState("processing");
-            // Clear any buffered audio to prevent echo processing
-            clearInputAudioBuffer();
-
-            // ⭐ Typing indicator is already added after transcript, so we don't need to add it here
-            // It will be replaced when the actual response starts streaming
-          }
-          break;
-
-        case "response.audio_transcript.delta":
-          // AI response text streaming
-          const deltaResponseId = message.response_id || message.response?.id;
-
-          // ⭐ CRITICAL FIX: Ignore late streaming updates from interrupted responses
-          // This prevents overwriting saved partial messages after user interrupts
-          if (
-            deltaResponseId &&
-            deltaResponseId === interruptedResponseIdRef.current
-          ) {
-            console.log(
-              `[${instanceIdRef.current}] ⏭️ Ignoring late delta from interrupted response ${deltaResponseId}`
-            );
-            return; // Don't process this delta - it's from an interrupted response
-          }
-
-          // FIX 1: Remove loader as soon as text starts arriving
-          if (voiceStateRef.current !== "speaking")
-            updateVoiceState("speaking");
-
-          // FIX 1: Update the Ref so we always know what the AI has said so far
-          if (message.delta) {
-            currentAiTextRef.current += message.delta;
-          }
-
-          // Only process if matches current response and hasn't been processed yet
-          if (
-            message.delta &&
-            deltaResponseId === currentResponseIdRef.current &&
-            deltaResponseId !== lastProcessedResponseIdRef.current
-          ) {
-            currentAiResponseRef.current += message.delta;
-            setAiResponse(currentAiResponseRef.current);
-
-            // Stream to chat history as text comes in
-            // This will replace the typing indicator if it exists
-            if (onAddMessage && currentAiResponseRef.current) {
-              onAddMessage({
-                type: "ai",
-                text: currentAiResponseRef.current,
-                isVoice: true,
-                isStreaming: true, // Mark as streaming
-                isTyping: false, // Replace typing indicator
-                replaceTyping: true, // Explicitly replace any typing indicators
-              });
-            }
-          } else if (
-            deltaResponseId &&
-            deltaResponseId === lastProcessedResponseIdRef.current
-          ) {
-            // Already processed this response, ignore deltas
-          }
-          break;
-
-        case "response.audio_transcript.done":
-          // AI response complete - only process if matches current response and not already processed
-          const responseId = message.response_id || message.response?.id;
-
-          // ⭐ CRITICAL FIX: Ignore done events from interrupted responses
-          if (responseId && responseId === interruptedResponseIdRef.current) {
-            console.log(
-              `[${instanceIdRef.current}] ⏭️ Ignoring done event from interrupted response ${responseId}`
-            );
-            return;
-          }
-
-          // Check if this response was already processed
-          if (responseId && responseId === lastProcessedResponseIdRef.current) {
-            return;
-          }
-
-          // Only process if matches current response
-          if (responseId && responseId !== currentResponseIdRef.current) {
-            return;
-          }
-
-          // Check if we have text to add - use currentAiTextRef for consistency
-          const transcriptText = currentAiTextRef.current.trim();
-          if (!transcriptText) {
-            currentAiResponseRef.current = "";
-            return;
-          }
-
-          // Mark as processed BEFORE adding to prevent race conditions
-          if (responseId) {
-            lastProcessedResponseIdRef.current = responseId;
-          }
-
-          // Final update to chat history (mark as not streaming)
-          // Only add if not already saved (e.g., by interruption)
-          if (
-            onAddMessage &&
-            transcriptText &&
-            !currentAiTextSavedRef.current
-          ) {
-            onAddMessage({
-              type: "ai",
-              text: transcriptText,
-              isVoice: true,
-              isStreaming: false, // Mark as complete
-              isTyping: false, // Ensure typing indicator is removed
-              replaceTyping: true, // Explicitly replace any typing indicators
-            });
-            // Mark as saved to prevent duplicate in response.done
-            currentAiTextSavedRef.current = true;
-          }
-
-          // Clear the response text refs (but keep currentAiTextRef for response.done check)
-          currentAiResponseRef.current = "";
-          break;
-
-        case "response.audio.delta":
-          // FIX 1: Remove loader as soon as audio starts arriving
-          if (voiceStateRef.current !== "speaking")
-            updateVoiceState("speaking");
-
-          // AI audio response
-          const audioResponseId = message.response_id || message.response?.id;
-          // Only process if matches current response
-          if (
-            message.delta &&
-            audioResponseId === currentResponseIdRef.current
-          ) {
-            const audioData = base64ToArrayBuffer(message.delta);
-            audioQueueRef.current.push(audioData);
-            playAudioQueue();
-          }
-          break;
-
-        case "response.audio.done":
-          // All audio chunks received from server - playback will finish naturally
-          // Note: We don't change state here - we wait for response.done and then wait for playback to finish
-          break;
-
-        case "response.function_call_arguments.delta":
-          // Function call started - arguments are streaming
-          // Set state to "processing" (Thinking...) as soon as function call begins
-          if (voiceStateRef.current !== "processing") {
-            updateVoiceState("processing");
-          }
-          break;
-
-        case "response.function_call_arguments.done":
-          // Complete function call received - execute it
-          const callId = message.call_id;
-          const functionName = message.name;
-
-          try {
-            const functionArgs = JSON.parse(message.arguments);
-
-            // Execute the function
-            executeFunctionCall(callId, functionName, functionArgs);
-          } catch (error) {
-            console.error(
-              `[${instanceIdRef.current}] Failed to parse function arguments:`,
-              error
-            );
-            // Send error back to model
-            if (wsRef.current?.readyState === WebSocket.OPEN) {
-              wsRef.current.send(
-                JSON.stringify({
-                  type: "conversation.item.create",
-                  item: {
-                    type: "function_call_output",
-                    call_id: callId,
-                    output: JSON.stringify({
-                      success: false,
-                      error: "Failed to parse function arguments",
-                    }),
-                  },
-                })
-              );
-            }
-          }
-          break;
-
-        case "response.done":
-          // Response complete, wait for audio to finish before going back to listening
-          // Mark response as done immediately to prevent cancel attempts
-          isResponseDoneRef.current = true;
-          // Clear the input buffer to remove any echo that was captured
-          clearInputAudioBuffer();
-
-          // FIX 1: Only add to history if it wasn't already added by an interruption
-          const finalText = currentAiTextRef.current.trim();
-          if (finalText !== "" && !currentAiTextSavedRef.current) {
-            if (onAddMessage) {
-              onAddMessage({
-                type: "ai",
-                text: finalText,
-              });
-            }
-          }
-
-          // Wait for audio playback to finish before allowing new speech detection
-          waitForAudioToFinish().then(() => {
-            // Small delay after audio finishes to prevent echo/overlap
-            setTimeout(() => {
-              isProcessingResponseRef.current = false;
-              // Only clear currentResponseIdRef, keep lastProcessedResponseIdRef to prevent duplicates
-              currentResponseIdRef.current = null;
-              canSendAudioRef.current = true; // Resume sending audio
-
-              // Clear for next turn
-              currentAiTextRef.current = "";
-              setAiResponse("");
-
-              // Use ref to check current state, not stale closure
-              if (
-                voiceStateRef.current !== "idle" &&
-                voiceStateRef.current !== "processing"
-              ) {
-                updateVoiceState("listening");
-              }
-            }, 300); // Small delay to let any echo subside
-          });
-          break;
-
-        case "error":
-          // Don't show error for cancel failures (response might already be done)
-          if (
-            message.error?.code === "response_cancel_not_active" ||
-            message.error?.message?.includes("no active response") ||
-            message.error?.message?.includes("cancel") // ⭐ ADD THIS
-          ) {
-            console.log(
-              `[${instanceIdRef.current}] ℹ️ Cancel ignored - response already completed`
-            );
-            // Mark typing indicator as cleared if response was canceled during processing
-            if (
-              isProcessingResponseRef.current &&
-              currentAiTextRef.current.trim() === ""
-            ) {
-              typingIndicatorClearedRef.current = true;
-            }
-            // Reset state since response is done
-            isResponseDoneRef.current = true;
-            isProcessingResponseRef.current = false;
-            canSendAudioRef.current = true;
-            if (voiceStateRef.current === "speaking") {
-              updateVoiceState("listening");
-              console.log("Listening 3");
-            }
-            // ⭐ DON'T SET ERROR - just log and continue
-            return; // ⭐ ADD RETURN to prevent error display
-          } else {
-            console.error("API Error:", message.error);
-            // Only send message if there's actual text content
-            const errorText = currentAiTextRef.current.trim();
-            if (isProcessingResponseRef.current && onAddMessage && errorText) {
-              onAddMessage({
-                type: "ai",
-                text: errorText,
-                isVoice: true,
-                isTyping: false,
-                isStreaming: false,
-              });
-            }
-            // Mark typing indicator as cleared if no text
-            if (isProcessingResponseRef.current && !errorText) {
-              typingIndicatorClearedRef.current = true;
-            }
-            setError(message.error?.message || "An error occurred");
-            isProcessingResponseRef.current = false;
-            canSendAudioRef.current = true;
-          }
-          break;
-
-        default:
-          // console.log("Unhandled message type:", message.type);
-          break;
-      }
-    },
-    [
-      onAddMessage,
-      onShowChat,
-      updateVoiceState,
-      clearInputAudioBuffer,
-      executeFunctionCall,
-      interruptAgent,
-    ]
-  );
-
-  // Keep the ref updated with the latest handler
-  useEffect(() => {
-    handleServerMessageRef.current = handleServerMessage;
-  }, [handleServerMessage]);
-
-  // Convert base64 to ArrayBuffer
-  const base64ToArrayBuffer = (base64) => {
-    const binaryString = atob(base64);
-    const bytes = new Uint8Array(binaryString.length);
-    for (let i = 0; i < binaryString.length; i++) {
-      bytes[i] = binaryString.charCodeAt(i);
-    }
-    return bytes.buffer;
-  };
-
-  // Convert ArrayBuffer to base64
-  const arrayBufferToBase64 = (buffer) => {
-    const bytes = new Uint8Array(buffer);
-    let binary = "";
-    for (let i = 0; i < bytes.length; i++) {
-      binary += String.fromCharCode(bytes[i]);
-    }
-    return btoa(binary);
-  };
 
   // Real-time frequency analysis for voice visualization
   const startFrequencyAnalysis = useCallback(() => {
@@ -1855,45 +401,27 @@ Remember: You're the friendly voice of Techjays. Be warm, be helpful, keep it br
         return;
       }
 
-      // Only analyze when listening (not when AI is speaking)
       if (voiceStateRef.current === "listening") {
         analyser.getByteFrequencyData(dataArray);
-
-        // Divide frequency spectrum into 5 bands for 5 bars
-        // Human voice is typically in 85Hz - 3400Hz range
-        // We'll sample different frequency ranges to capture voice modulation
         const bandSize = Math.floor(bufferLength / 5);
         const frequencyBands = [];
 
         for (let i = 0; i < 5; i++) {
           const start = i * bandSize;
           const end = start + bandSize;
-          let sum = 0;
-          let max = 0;
-          let peakCount = 0;
+          let sum = 0, max = 0, peakCount = 0;
 
-          // Get max, average, and peak count for this frequency band
           for (let j = start; j < end && j < bufferLength; j++) {
             const value = dataArray[j];
             sum += value;
             max = Math.max(max, value);
-            // Count peaks above threshold for more dynamic response
             if (value > 128) peakCount++;
           }
 
-          // Use a combination of max and average for more natural response
           const avg = sum / bandSize;
-          // Weighted combination: 60% max (for peaks) + 30% average (for smoothness) + 10% peak density
           const peakFactor = Math.min(peakCount / bandSize, 1);
-          const normalized =
-            (max * 0.6 + avg * 0.3 + peakFactor * 255 * 0.1) / 255;
-
-          // Apply exponential scaling for more natural visual response
-          // Voice modulation is more visible in the mid-range
+          const normalized = (max * 0.6 + avg * 0.3 + peakFactor * 255 * 0.1) / 255;
           const scaled = Math.pow(Math.max(0, normalized), 0.55);
-
-          // Map to bar height with dynamic range (min 4px, max 24px for natural look)
-          // Center bars (2, 3) get slightly more range for better voice visualization
           const maxHeight = i === 2 || i === 3 ? 24 : 20;
           const height = 4 + scaled * (maxHeight - 4);
           frequencyBands.push(height);
@@ -1901,7 +429,6 @@ Remember: You're the friendly voice of Techjays. Be warm, be helpful, keep it br
 
         setFrequencyData(frequencyBands);
       } else {
-        // When not listening, fade out the bars
         setFrequencyData((prev) => prev.map((val) => Math.max(0, val * 0.85)));
       }
 
@@ -1911,47 +438,27 @@ Remember: You're the friendly voice of Techjays. Be warm, be helpful, keep it br
     animationFrameRef.current = requestAnimationFrame(analyze);
   }, []);
 
-  // Stop existing audio capture
+  // Stop audio capture
   const stopAudioCapture = useCallback(() => {
-    // Cancel animation frame for audio level visualization
     if (animationFrameRef.current) {
       cancelAnimationFrame(animationFrameRef.current);
       animationFrameRef.current = null;
     }
 
-    // Disconnect all audio nodes
-    const nodesToDisconnect = [
-      sourceNodeRef,
-      highPassFilterRef,
-      lowPassFilterRef,
-      analyserRef,
-      workletNodeRef,
-    ];
-
-    nodesToDisconnect.forEach((nodeRef) => {
+    [sourceNodeRef, analyserRef, workletNodeRef].forEach((nodeRef) => {
       if (nodeRef.current) {
-        try {
-          nodeRef.current.disconnect();
-        } catch (e) {
-          /* ignore */
-        }
+        try { nodeRef.current.disconnect(); } catch (e) { /* ignore */ }
         nodeRef.current = null;
       }
     });
 
-    // Stop media stream tracks
     if (mediaStreamRef.current) {
       mediaStreamRef.current.getTracks().forEach((track) => track.stop());
       mediaStreamRef.current = null;
     }
 
-    // Close audio context
     if (audioContextRef.current && audioContextRef.current.state !== "closed") {
-      try {
-        audioContextRef.current.close();
-      } catch (e) {
-        /* ignore */
-      }
+      try { audioContextRef.current.close(); } catch (e) { /* ignore */ }
       audioContextRef.current = null;
     }
 
@@ -1960,96 +467,53 @@ Remember: You're the friendly voice of Techjays. Be warm, be helpful, keep it br
     setFrequencyData([0, 0, 0, 0, 0]);
   }, []);
 
-  // Start capturing audio from microphone (simple ScriptProcessor approach)
+  // Start capturing audio from microphone
   const startAudioCapture = useCallback(async () => {
-    // Prevent multiple audio captures
-    if (isCapturingRef.current) {
-      return;
-    }
-
-    // Clean up any existing audio resources first
+    if (isCapturingRef.current) return;
     stopAudioCapture();
 
     isCapturingRef.current = true;
     canSendAudioRef.current = true;
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          sampleRate: 24000,
-          channelCount: 1,
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
-      });
-
+      const stream = await navigator.mediaDevices.getUserMedia(AUDIO_CONSTRAINTS);
       mediaStreamRef.current = stream;
 
-      const audioContext = new (window.AudioContext ||
-        window.webkitAudioContext)({
-        sampleRate: 24000,
-      });
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
       audioContextRef.current = audioContext;
 
       const source = audioContext.createMediaStreamSource(stream);
       sourceNodeRef.current = source;
 
-      // Create AnalyserNode for real-time frequency analysis
       const analyser = audioContext.createAnalyser();
-      analyser.fftSize = 256; // Smaller FFT for faster updates
-      analyser.smoothingTimeConstant = 0.8; // Smooth transitions
+      analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.8;
       analyserRef.current = analyser;
 
-      // Create ScriptProcessor for audio processing
       const processor = audioContext.createScriptProcessor(4096, 1, 1);
 
-      let audioChunkCount = 0;
       processor.onaudioprocess = (e) => {
-        // ⭐ ALWAYS send audio for server VAD to detect interruptions
-        // Server-side VAD needs audio stream to detect when user starts speaking
-
-        // Use refs to check current state (avoid stale closures)
-        if (
-          wsRef.current?.readyState === WebSocket.OPEN &&
-          voiceStateRef.current !== "processing"
-        ) {
+        if (rtRef.current && voiceStateRef.current !== "processing") {
           const inputData = e.inputBuffer.getChannelData(0);
           const pcm16 = float32ToPcm16(inputData);
           const base64Audio = arrayBufferToBase64(pcm16.buffer);
 
-          audioChunkCount++;
-
           try {
-            wsRef.current.send(
-              JSON.stringify({
-                type: "input_audio_buffer.append",
-                audio: base64Audio,
-              })
-            );
+            rtRef.current.send({ type: "input_audio_buffer.append", audio: base64Audio });
           } catch (err) {
-            console.error(
-              `[${instanceIdRef.current}] Error sending audio:`,
-              err
-            );
+            console.error(`[${instanceIdRef.current}] Error sending audio:`, err);
           }
         }
       };
 
-      // Connect: source -> analyser -> processor -> destination
       source.connect(analyser);
       analyser.connect(processor);
       processor.connect(audioContext.destination);
       workletNodeRef.current = processor;
 
-      // Start real-time frequency analysis animation
       startFrequencyAnalysis();
     } catch (err) {
-      console.error(
-        `[${instanceIdRef.current}] Failed to start audio capture:`,
-        err.name,
-        err.message
-      );
+      console.error(`[${instanceIdRef.current}] Failed to start audio capture:`, err.name, err.message);
       isCapturingRef.current = false;
 
       if (err.name === "NotAllowedError") {
@@ -2062,212 +526,509 @@ Remember: You're the friendly voice of Techjays. Be warm, be helpful, keep it br
     }
   }, [stopAudioCapture, startFrequencyAnalysis]);
 
-  // Convert Float32 to PCM16
-  const float32ToPcm16 = (float32Array) => {
-    const pcm16 = new Int16Array(float32Array.length);
-    for (let i = 0; i < float32Array.length; i++) {
-      const s = Math.max(-1, Math.min(1, float32Array[i]));
-      pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
-    }
-    return pcm16;
-  };
-
   // Play audio from queue
-  const playAudioQueue = async () => {
+  const playAudioQueue = useCallback(async () => {
     if (isPlayingRef.current || audioQueueRef.current.length === 0) return;
-
     isPlayingRef.current = true;
 
     while (audioQueueRef.current.length > 0) {
-      // Check for interruption before playing
-      if (!isPlayingRef.current) {
-        console.log(`[${instanceIdRef.current}] Playback interrupted`);
-        break;
-      }
-
+      if (!isPlayingRef.current) break;
       const audioData = audioQueueRef.current.shift();
-
       try {
         await playAudioBuffer(audioData);
       } catch (error) {
-        console.error(
-          `[${instanceIdRef.current}] Audio playback error:`,
-          error
-        );
+        console.error(`[${instanceIdRef.current}] Audio playback error:`, error);
       }
-
-      // Check for interruption after playing
-      if (!isPlayingRef.current) {
-        console.log(
-          `[${instanceIdRef.current}] Playback interrupted between chunks`
-        );
-        break;
-      }
+      if (!isPlayingRef.current) break;
     }
 
     isPlayingRef.current = false;
-  };
+  }, []);
 
   // Wait for audio playback to finish
-  const waitForAudioToFinish = () => {
+  const waitForAudioToFinish = useCallback(() => {
     return new Promise((resolve) => {
-      // If not playing and queue is empty, wait a bit then resolve
       if (!isPlayingRef.current && audioQueueRef.current.length === 0) {
-        // Wait 200ms to ensure no new audio is coming
         setTimeout(() => {
-          if (!isPlayingRef.current && audioQueueRef.current.length === 0) {
-            resolve();
-          }
+          if (!isPlayingRef.current && audioQueueRef.current.length === 0) resolve();
         }, 200);
         return;
       }
 
       let consecutiveEmptyChecks = 0;
-      const requiredEmptyChecks = 3; // Require 3 consecutive checks (300ms) of no activity
-
-      // Poll every 100ms to check if audio is done
       const checkInterval = setInterval(() => {
-        const isPlaying = isPlayingRef.current;
-        const queueLength = audioQueueRef.current.length;
-
-        // If not playing and queue is empty, increment counter
-        if (!isPlaying && queueLength === 0) {
+        if (!isPlayingRef.current && audioQueueRef.current.length === 0) {
           consecutiveEmptyChecks++;
-          // Only resolve after multiple consecutive checks to ensure audio is really done
-          if (consecutiveEmptyChecks >= requiredEmptyChecks) {
+          if (consecutiveEmptyChecks >= 3) {
             clearInterval(checkInterval);
             resolve();
           }
         } else {
-          // Reset counter if audio is still playing or queue has items
           consecutiveEmptyChecks = 0;
         }
       }, 100);
 
-      // Safety timeout - only as a last resort (10 minutes for very long responses)
-      setTimeout(() => {
-        clearInterval(checkInterval);
-        resolve();
-      }, 600000); // 10 minutes - should be enough for any response
+      setTimeout(() => { clearInterval(checkInterval); resolve(); }, 600000);
     });
-  };
+  }, []);
 
   // Play a single audio buffer
-  const playAudioBuffer = (arrayBuffer) => {
+  const playAudioBuffer = useCallback((arrayBuffer) => {
     return new Promise((resolve, reject) => {
       if (!audioContextRef.current) {
-        audioContextRef.current = new (window.AudioContext ||
-          window.webkitAudioContext)({
-          sampleRate: 24000,
-        });
+        audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
       }
 
-      // Convert PCM16 to Float32 for Web Audio API
       const pcm16 = new Int16Array(arrayBuffer);
       const float32 = new Float32Array(pcm16.length);
       for (let i = 0; i < pcm16.length; i++) {
         float32[i] = pcm16[i] / (pcm16[i] < 0 ? 0x8000 : 0x7fff);
       }
 
-      const audioBuffer = audioContextRef.current.createBuffer(
-        1,
-        float32.length,
-        24000
-      );
+      const audioBuffer = audioContextRef.current.createBuffer(1, float32.length, 24000);
       audioBuffer.getChannelData(0).set(float32);
 
       const source = audioContextRef.current.createBufferSource();
       source.buffer = audioBuffer;
       source.connect(audioContextRef.current.destination);
-
-      // ⭐ Store source for interruption
       currentAudioSourceRef.current = source;
 
-      source.onended = () => {
-        currentAudioSourceRef.current = null;
-        resolve();
-      };
-
-      source.onerror = (error) => {
-        currentAudioSourceRef.current = null;
-        reject(error);
-      };
-
+      source.onended = () => { currentAudioSourceRef.current = null; resolve(); };
+      source.onerror = (error) => { currentAudioSourceRef.current = null; reject(error); };
       source.start();
     });
-  };
+  }, []);
 
-  // ⭐ SIMPLIFIED handleInterrupt - uses centralized interruptAgent
+  // Handle interrupt button click
   const handleInterrupt = useCallback(() => {
-    const wasInterrupted = interruptAgent("button_click");
-
-    if (wasInterrupted) {
-      console.log(
-        `[${instanceIdRef.current}] 👆 User interrupted agent via button`
-      );
-    } else {
-      console.log(
-        `[${instanceIdRef.current}] ℹ️ No active response to interrupt`
-      );
-    }
+    interruptAgent("button_click");
   }, [interruptAgent]);
+
+  // Setup event handlers for the realtime client
+  const setupEventHandlers = useCallback((rt) => {
+    // WebSocket-level events
+    rt.socket.addEventListener('open', () => {
+      console.log(`[${instanceIdRef.current}] Connection opened!`);
+      isConnectingRef.current = false;
+      globalConnectionActive = true;
+
+      rt.send({ type: "session.update", session: getSessionConfig() });
+
+      if (onShowChat && !hasShownChatRef.current) {
+        hasShownChatRef.current = true;
+        onShowChat();
+      }
+
+      if (!hasGreetedRef.current && !globalHasGreeted) {
+        setTimeout(() => {
+          if (rtRef.current) {
+            rt.send({
+              type: "conversation.item.create",
+              item: {
+                type: "message",
+                role: "user",
+                content: [{ type: "input_text", text: GREETING_CONFIG.message }],
+              },
+            });
+            rt.send({ type: "response.create" });
+            hasGreetedRef.current = true;
+            globalHasGreeted = true;
+            updateVoiceState("speaking");
+          }
+        }, GREETING_CONFIG.delay);
+      } else {
+        updateVoiceState("listening");
+      }
+
+      if (!isCapturingRef.current) startAudioCapture();
+    });
+
+    rt.socket.addEventListener('close', (event) => {
+      isConnectingRef.current = false;
+      console.log(`[${instanceIdRef.current}] Connection closed. Code: ${event.code}`);
+
+      if (event.code === 1000) {
+        rtRef.current = null;
+        globalConnectionActive = false;
+        globalRealtimeClient = null;
+
+        if (isActive && voiceStateRef.current !== "idle") {
+          setTimeout(() => {
+            if (isActive && connectRealtimeRef.current && !rtRef.current) {
+              connectRealtimeRef.current();
+            }
+          }, 500);
+        }
+        return;
+      }
+
+      const timeSinceLastInterrupt = Date.now() - lastInterruptTimeRef.current;
+      if (event.code === 1006 && (timeSinceLastInterrupt < 3000 || isProcessingResponseRef.current)) {
+        rtRef.current = null;
+        globalConnectionActive = false;
+        globalRealtimeClient = null;
+        isProcessingResponseRef.current = false;
+        isResponseDoneRef.current = true;
+
+        if (voiceStateRef.current !== "idle" && voiceStateRef.current !== "processing") {
+          updateVoiceState("listening");
+        }
+
+        setTimeout(() => {
+          if (isActive && connectRealtimeRef.current && !rtRef.current) {
+            connectRealtimeRef.current();
+          }
+        }, 500);
+        return;
+      }
+
+      if (isReconnectingRef.current) return;
+
+      if (isActive && voiceStateRef.current !== "idle") {
+        isReconnectingRef.current = true;
+        setTimeout(() => {
+          rtRef.current = null;
+          globalConnectionActive = false;
+          globalRealtimeClient = null;
+          isConnectingRef.current = false;
+
+          if (connectRealtimeRef.current) {
+            connectRealtimeRef.current()
+              .then(() => { isReconnectingRef.current = false; })
+              .catch(() => {
+                isReconnectingRef.current = false;
+                setError("Connection lost. Please try again.");
+                updateVoiceState("idle");
+              });
+          } else {
+            isReconnectingRef.current = false;
+          }
+        }, 500);
+      } else {
+        cleanup(false);
+        globalConnectionActive = false;
+        globalRealtimeClient = null;
+      }
+    });
+
+    rt.socket.addEventListener('error', () => {
+      isConnectingRef.current = false;
+      setError("Connection error. Please try again.");
+      updateVoiceState("idle");
+    });
+
+    // SDK event handlers
+    rt.on('session.created', () => {});
+    rt.on('session.updated', () => {});
+
+    rt.on('input_audio_buffer.speech_started', () => {
+      if (currentResponseIdRef.current) {
+        interruptedResponseIdRef.current = currentResponseIdRef.current;
+      }
+
+      if (isProcessingResponseRef.current && currentAiTextRef.current.trim() === "") {
+        typingIndicatorClearedRef.current = true;
+      }
+
+      if (currentAiTextRef.current.trim() !== "" && !currentAiTextSavedRef.current) {
+        if (onAddMessage) {
+          onAddMessage({ type: "ai", text: currentAiTextRef.current + "...", isVoice: true, isStreaming: false });
+          currentAiTextSavedRef.current = true;
+        }
+      }
+
+      interruptAgent("vad_speech", true);
+      currentAiTextRef.current = "";
+      setAiResponse("");
+      updateVoiceState("listening");
+      currentTranscriptRef.current = "";
+      setTranscript("");
+    });
+
+    rt.on('input_audio_buffer.speech_stopped', () => {
+      if (!isProcessingResponseRef.current) updateVoiceState("processing");
+    });
+
+    rt.on('input_audio_buffer.committed', () => {});
+    rt.on('conversation.item.created', () => {});
+
+    rt.on('conversation.item.input_audio_transcription.completed', (event) => {
+      const itemId = event.item_id;
+      if (itemId && itemId === lastProcessedItemIdRef.current) return;
+
+      if (event.transcript) {
+        if (isPhantomTranscription(event.transcript)) {
+          console.log(`[${instanceIdRef.current}] 🚫 Ignoring phantom transcription`);
+          return;
+        }
+
+        lastProcessedItemIdRef.current = itemId;
+        currentTranscriptRef.current = event.transcript;
+        setTranscript(event.transcript);
+
+        if (onAddMessage) {
+          onAddMessage({ type: "user", text: event.transcript, isVoice: true });
+          typingIndicatorClearedRef.current = false;
+        }
+
+        if (onShowChat && !hasShownChatRef.current) {
+          hasShownChatRef.current = true;
+          onShowChat();
+        }
+      }
+    });
+
+    rt.on('response.created', (event) => {
+      const newResponseId = event.response?.id;
+      if (newResponseId) {
+        if (newResponseId === currentResponseIdRef.current) return;
+
+        if (interruptedResponseIdRef.current && interruptedResponseIdRef.current !== newResponseId) {
+          interruptedResponseIdRef.current = null;
+        }
+
+        currentResponseIdRef.current = newResponseId;
+        isProcessingResponseRef.current = true;
+        isResponseDoneRef.current = false;
+        canSendAudioRef.current = false;
+        currentAiTextRef.current = "";
+        currentAiTextSavedRef.current = false;
+        typingIndicatorClearedRef.current = false;
+        updateVoiceState("processing");
+        clearInputAudioBuffer();
+      }
+    });
+
+    rt.on('response.audio_transcript.delta', (event) => {
+      const deltaResponseId = event.response_id || event.response?.id;
+
+      if (deltaResponseId && deltaResponseId === interruptedResponseIdRef.current) return;
+
+      if (voiceStateRef.current !== "speaking") updateVoiceState("speaking");
+
+      if (event.delta) currentAiTextRef.current += event.delta;
+
+      if (event.delta && deltaResponseId === currentResponseIdRef.current && deltaResponseId !== lastProcessedResponseIdRef.current) {
+        currentAiResponseRef.current += event.delta;
+        setAiResponse(currentAiResponseRef.current);
+
+        if (onAddMessage && currentAiResponseRef.current) {
+          onAddMessage({
+            type: "ai",
+            text: currentAiResponseRef.current,
+            isVoice: true,
+            isStreaming: true,
+            isTyping: false,
+            replaceTyping: true,
+          });
+        }
+      }
+    });
+
+    rt.on('response.audio_transcript.done', (event) => {
+      const responseId = event.response_id || event.response?.id;
+
+      if (responseId && responseId === interruptedResponseIdRef.current) return;
+      if (responseId && responseId === lastProcessedResponseIdRef.current) return;
+      if (responseId && responseId !== currentResponseIdRef.current) return;
+
+      const transcriptText = currentAiTextRef.current.trim();
+      if (!transcriptText) {
+        currentAiResponseRef.current = "";
+        return;
+      }
+
+      if (responseId) lastProcessedResponseIdRef.current = responseId;
+
+      if (onAddMessage && transcriptText && !currentAiTextSavedRef.current) {
+        onAddMessage({
+          type: "ai",
+          text: transcriptText,
+          isVoice: true,
+          isStreaming: false,
+          isTyping: false,
+          replaceTyping: true,
+        });
+        currentAiTextSavedRef.current = true;
+      }
+
+      currentAiResponseRef.current = "";
+    });
+
+    rt.on('response.audio.delta', (event) => {
+      if (voiceStateRef.current !== "speaking") updateVoiceState("speaking");
+
+      const audioResponseId = event.response_id || event.response?.id;
+      if (event.delta && audioResponseId === currentResponseIdRef.current) {
+        const audioData = base64ToArrayBuffer(event.delta);
+        audioQueueRef.current.push(audioData);
+        playAudioQueue();
+      }
+    });
+
+    rt.on('response.audio.done', () => {});
+
+    rt.on('response.function_call_arguments.delta', () => {
+      if (voiceStateRef.current !== "processing") updateVoiceState("processing");
+    });
+
+    rt.on('response.function_call_arguments.done', (event) => {
+      const callId = event.call_id;
+      const functionName = event.name;
+
+      try {
+        const functionArgs = JSON.parse(event.arguments);
+        executeFunctionCall(callId, functionName, functionArgs);
+      } catch (error) {
+        console.error(`[${instanceIdRef.current}] Failed to parse function arguments:`, error);
+        if (rtRef.current) {
+          rtRef.current.send({
+            type: "conversation.item.create",
+            item: {
+              type: "function_call_output",
+              call_id: callId,
+              output: JSON.stringify({ success: false, error: "Failed to parse function arguments" }),
+            },
+          });
+        }
+      }
+    });
+
+    rt.on('response.done', () => {
+      isResponseDoneRef.current = true;
+      clearInputAudioBuffer();
+
+      const finalText = currentAiTextRef.current.trim();
+      if (finalText !== "" && !currentAiTextSavedRef.current && onAddMessage) {
+        onAddMessage({ type: "ai", text: finalText });
+      }
+
+      waitForAudioToFinish().then(() => {
+        setTimeout(() => {
+          isProcessingResponseRef.current = false;
+          currentResponseIdRef.current = null;
+          canSendAudioRef.current = true;
+          currentAiTextRef.current = "";
+          setAiResponse("");
+
+          if (voiceStateRef.current !== "idle" && voiceStateRef.current !== "processing") {
+            updateVoiceState("listening");
+          }
+        }, 300);
+      });
+    });
+
+    rt.on('error', (event) => {
+      const error = event.error || event;
+
+      if (error?.code === "response_cancel_not_active" || error?.message?.includes("no active response") || error?.message?.includes("cancel")) {
+        if (isProcessingResponseRef.current && currentAiTextRef.current.trim() === "") {
+          typingIndicatorClearedRef.current = true;
+        }
+        isResponseDoneRef.current = true;
+        isProcessingResponseRef.current = false;
+        canSendAudioRef.current = true;
+        if (voiceStateRef.current === "speaking") updateVoiceState("listening");
+        return;
+      }
+
+      console.error("API Error:", error);
+      const errorText = currentAiTextRef.current.trim();
+      if (isProcessingResponseRef.current && onAddMessage && errorText) {
+        onAddMessage({ type: "ai", text: errorText, isVoice: true, isTyping: false, isStreaming: false });
+      }
+      if (isProcessingResponseRef.current && !errorText) {
+        typingIndicatorClearedRef.current = true;
+      }
+      setError(error?.message || "An error occurred");
+      isProcessingResponseRef.current = false;
+      canSendAudioRef.current = true;
+    });
+  }, [
+    onAddMessage,
+    onShowChat,
+    updateVoiceState,
+    clearInputAudioBuffer,
+    executeFunctionCall,
+    interruptAgent,
+    startAudioCapture,
+    playAudioQueue,
+    waitForAudioToFinish,
+    isActive,
+  ]);
+
+  // Initialize Realtime SDK connection
+  const connectRealtime = useCallback(async () => {
+    if (rtRef.current?.socket?.readyState === WebSocket.OPEN) return;
+    if (rtRef.current?.socket?.readyState === WebSocket.CONNECTING) return;
+    if (isConnectingRef.current) return;
+
+    isConnectingRef.current = true;
+    updateVoiceState("connecting");
+    setError(null);
+
+    try {
+      const tokenData = await fetchSpeechToken();
+      if (!tokenData || !tokenData.token) {
+        throw new Error("Failed to obtain authentication token");
+      }
+
+      const azureClient = new AzureOpenAI({
+        azureADTokenProvider: async () => tokenData.token,
+        apiVersion: API_VERSION,
+        deployment: MODEL,
+        endpoint: `https://${AZURE_ENDPOINT}`,
+        dangerouslyAllowBrowser: true,
+      });
+
+      const rt = await OpenAIRealtimeWebSocket.azure(azureClient);
+      rtRef.current = rt;
+      globalRealtimeClient = rt;
+      setupEventHandlers(rt);
+    } catch (err) {
+      console.error(`[${instanceIdRef.current}] Failed to connect:`, err);
+      isConnectingRef.current = false;
+      setError("Failed to connect. Please try again.");
+      updateVoiceState("idle");
+    }
+  }, [fetchSpeechToken, updateVoiceState, setupEventHandlers]);
 
   // Cleanup resources
   const cleanup = useCallback(
-    (shouldCloseWebSocket = true) => {
-      // ⭐ Stop any playing audio first
+    (shouldCloseConnection = true) => {
       if (currentAudioSourceRef.current) {
         try {
           currentAudioSourceRef.current.stop();
           currentAudioSourceRef.current.disconnect();
           currentAudioSourceRef.current = null;
-        } catch (e) {
-          /* ignore */
-        }
+        } catch (e) { /* ignore */ }
       }
 
-      // Clear token refresh timer
       if (tokenRefreshTimerRef.current) {
         clearTimeout(tokenRefreshTimerRef.current);
         tokenRefreshTimerRef.current = null;
       }
 
-      // Stop audio capture (handles media stream, audio nodes, and context)
       stopAudioCapture();
 
-      // Close WebSocket only if explicitly requested (when ending session)
-      if (wsRef.current && shouldCloseWebSocket) {
-        if (wsRef.current.readyState === WebSocket.OPEN) {
-          wsRef.current.close(1000, "Session ended");
-        } else if (wsRef.current.readyState === WebSocket.CONNECTING) {
-          // If still connecting, set up a handler to close it when it opens
-          const ws = wsRef.current;
-          ws.onopen = () => {
-            ws.close(1000, "Session ended");
-          };
-          // Also clear handlers to prevent memory leaks
-          ws.onmessage = null;
-          ws.onerror = null;
-        }
-        wsRef.current = null;
-        // Clear global connection tracker
+      if (rtRef.current && shouldCloseConnection) {
+        try { rtRef.current.close(); } catch (e) { /* ignore */ }
+        rtRef.current = null;
         globalConnectionActive = false;
-        globalWebSocket = null;
+        globalRealtimeClient = null;
       }
 
-      // Clear audio queue and reset flags
       audioQueueRef.current = [];
       isPlayingRef.current = false;
       currentResponseIdRef.current = null;
       lastProcessedItemIdRef.current = null;
       lastProcessedResponseIdRef.current = null;
       isProcessingResponseRef.current = false;
-      isResponseDoneRef.current = false; // Reset response done flag
+      isResponseDoneRef.current = false;
       isConnectingRef.current = false;
       canSendAudioRef.current = true;
 
-      // Clear token data if ending session
-      if (shouldCloseWebSocket) {
+      if (shouldCloseConnection) {
         tokenRef.current = null;
         expiresAtRef.current = null;
         isFetchingTokenRef.current = false;
@@ -2278,40 +1039,39 @@ Remember: You're the friendly voice of Techjays. Be warm, be helpful, keep it br
 
   // End session
   const handleEndSession = () => {
-    cleanup(true); // Close WebSocket when ending session
+    cleanup(true);
     updateVoiceState("idle");
     setTranscript("");
     setAiResponse("");
     setError(null);
-    setFatalError(null); // Clear fatal error on session end
+    setFatalError(null);
     setAudioLevel(0);
     currentTranscriptRef.current = "";
     currentAiResponseRef.current = "";
     hasStartedRef.current = false;
-    hasGreetedRef.current = false; // Reset greeting flag for next session
-    globalHasGreeted = false; // Reset global greeting flag for fresh start
+    hasGreetedRef.current = false;
+    globalHasGreeted = false;
     lastProcessedItemIdRef.current = null;
     lastProcessedResponseIdRef.current = null;
     isProcessingResponseRef.current = false;
     isConnectingRef.current = false;
-    isReconnectingRef.current = false; // Reset reconnection flag
+    isReconnectingRef.current = false;
     canSendAudioRef.current = true;
-    hasShownChatRef.current = false; // Reset so chat can be shown again next time
-    isInitialConnectionRef.current = true; // Reset for next session
+    hasShownChatRef.current = false;
+    isInitialConnectionRef.current = true;
     onClose();
   };
 
-  // Update refs whenever functions change (runs first to ensure refs are set)
+  // Update refs whenever functions change
   useEffect(() => {
-    connectWebSocketRef.current = connectWebSocket;
+    connectRealtimeRef.current = connectRealtime;
     cleanupRef.current = cleanup;
     updateVoiceStateRef.current = updateVoiceState;
-  }, [connectWebSocket, cleanup, updateVoiceState]);
+  }, [connectRealtime, cleanup, updateVoiceState]);
 
-  // ⭐ MEMORY LEAK FIX: Cleanup token refresh timer on unmount
+  // Cleanup token refresh timer on unmount
   useEffect(() => {
     return () => {
-      // Cleanup on unmount
       if (tokenRefreshTimerRef.current) {
         clearTimeout(tokenRefreshTimerRef.current);
         tokenRefreshTimerRef.current = null;
@@ -2319,72 +1079,54 @@ Remember: You're the friendly voice of Techjays. Be warm, be helpful, keep it br
     };
   }, []);
 
-  // ⭐ WATCHDOG: Detect stuck "Listening" state without WebSocket and auto-recover
+  // Watchdog: Detect stuck "Listening" state
   useEffect(() => {
     if (!isActive) return;
 
     const watchdogInterval = setInterval(() => {
       const isListening = voiceStateRef.current === "listening";
-      const noWebSocket =
-        !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN;
+      const noConnection = !rtRef.current || rtRef.current.socket?.readyState !== WebSocket.OPEN;
       const notConnecting = !isConnectingRef.current;
       const notReconnecting = !isReconnectingRef.current;
 
-      if (isListening && noWebSocket && notConnecting && notReconnecting) {
-        console.warn(
-          `[${instanceIdRef.current}] ⚠️ WATCHDOG: Stuck in Listening without WebSocket - attempting recovery...`
-        );
-
-        // Attempt to reconnect
-        if (connectWebSocketRef.current) {
-          connectWebSocketRef.current();
-        }
+      if (isListening && noConnection && notConnecting && notReconnecting) {
+        console.warn(`[${instanceIdRef.current}] ⚠️ WATCHDOG: Stuck in Listening - attempting recovery...`);
+        if (connectRealtimeRef.current) connectRealtimeRef.current();
       }
-    }, 3000); // Check every 3 seconds
+    }, 3000);
 
     return () => clearInterval(watchdogInterval);
   }, [isActive]);
 
-  // Simplified session management - ONLY depends on isActive
-  // Connection logic is self-contained to prevent reconnection issues
+  // Session management
   useEffect(() => {
-    // Capture isActive at effect time
     const currentIsActive = isActive;
 
-    // If deactivating, cleanup and return
     if (!currentIsActive) {
-      if (hasStartedRef.current) {
-        if (cleanupRef.current) {
-          cleanupRef.current(true);
-        }
+      if (hasStartedRef.current && cleanupRef.current) {
+        cleanupRef.current(true);
         hasStartedRef.current = false;
       }
       return;
     }
 
-    // CRITICAL: Check global connection first (survives remounts)
-    if (globalConnectionActive && globalWebSocket) {
-      // Restore WebSocket reference if we lost it on remount
-      if (!wsRef.current && globalWebSocket.readyState === WebSocket.OPEN) {
-        wsRef.current = globalWebSocket;
+    if (globalConnectionActive && globalRealtimeClient) {
+      if (!rtRef.current && globalRealtimeClient.socket?.readyState === WebSocket.OPEN) {
+        rtRef.current = globalRealtimeClient;
       }
 
-      // If global WebSocket is OPEN, never reconnect
-      if (globalWebSocket.readyState === WebSocket.OPEN) {
-        wsRef.current = globalWebSocket;
+      if (globalRealtimeClient.socket?.readyState === WebSocket.OPEN) {
+        rtRef.current = globalRealtimeClient;
         hasStartedRef.current = true;
-        // Ensure voice state is listening if it's idle
         if (voiceStateRef.current === "idle" && updateVoiceStateRef.current) {
           updateVoiceStateRef.current("listening");
         }
         return;
       }
 
-      // If global WebSocket is CONNECTING, wait
-      if (globalWebSocket.readyState === WebSocket.CONNECTING) {
-        wsRef.current = globalWebSocket;
+      if (globalRealtimeClient.socket?.readyState === WebSocket.CONNECTING) {
+        rtRef.current = globalRealtimeClient;
         hasStartedRef.current = true;
-        // Set state to connecting if idle
         if (voiceStateRef.current === "idle" && updateVoiceStateRef.current) {
           updateVoiceStateRef.current("connecting");
         }
@@ -2392,128 +1134,78 @@ Remember: You're the friendly voice of Techjays. Be warm, be helpful, keep it br
       }
     }
 
-    // CRITICAL CHECK: If WebSocket is already OPEN, do ABSOLUTELY NOTHING
-    // This prevents any reconnection attempts during the session, even on remount
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
+    if (rtRef.current?.socket?.readyState === WebSocket.OPEN) {
       hasStartedRef.current = true;
-      // Ensure voice state is listening if it's idle
       if (voiceStateRef.current === "idle" && updateVoiceStateRef.current) {
         updateVoiceStateRef.current("listening");
       }
       return;
     }
 
-    // If connecting, wait - do nothing
-    if (wsRef.current?.readyState === WebSocket.CONNECTING) {
+    if (rtRef.current?.socket?.readyState === WebSocket.CONNECTING) {
       hasStartedRef.current = true;
-      // Set state to connecting if idle
       if (voiceStateRef.current === "idle" && updateVoiceStateRef.current) {
         updateVoiceStateRef.current("connecting");
       }
       return;
     }
 
-    // CRITICAL: If audio is already capturing, we have an active session
-    // Don't reconnect even if component remounted (audio capture indicates active session)
-    if (isCapturingRef.current) {
+    if (isCapturingRef.current || hasStartedRef.current) {
       hasStartedRef.current = true;
       return;
     }
 
-    // If already marked as started, don't reconnect (even without WebSocket ref)
-    // This prevents reconnection when component remounts
-    if (hasStartedRef.current) {
-      return;
-    }
-
-    // If WebSocket exists but is closed, and we're already started, don't reconnect
-    if (hasStartedRef.current && wsRef.current) {
-      return;
-    }
-
-    // Only connect if: active, not started, and WebSocket doesn't exist or is closed
     hasStartedRef.current = true;
 
-    // Set state to connecting immediately when starting new connection
     if (updateVoiceStateRef.current && voiceStateRef.current === "idle") {
       updateVoiceStateRef.current("connecting");
     }
 
-    // Use ref to call connectWebSocket (avoids dependency issues)
-    // The ref is set by the useEffect below, which runs before this one
-    if (connectWebSocketRef.current) {
-      connectWebSocketRef.current();
-    }
+    if (connectRealtimeRef.current) connectRealtimeRef.current();
 
-    // Cleanup function - only runs when isActive changes to false
     return () => {
-      // Only cleanup if we're actually deactivating
-      if (!currentIsActive && hasStartedRef.current) {
-        if (cleanupRef.current) {
-          cleanupRef.current(true);
-        }
+      if (!currentIsActive && hasStartedRef.current && cleanupRef.current) {
+        cleanupRef.current(true);
         hasStartedRef.current = false;
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isActive]); // ONLY isActive - connection persists regardless of other changes
+  }, [isActive]);
 
-  // Keyboard support - Escape to close
+  // Keyboard support
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if (e.key === "Escape" && isActive) {
-        handleEndSession();
-      }
+      if (e.key === "Escape" && isActive) handleEndSession();
     };
 
-    if (isActive) {
-      window.addEventListener("keydown", handleKeyDown);
-    }
-
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-    };
+    if (isActive) window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isActive]);
 
   const getStatusText = () => {
     if (error) return error;
-
     switch (voiceState) {
-      case "connecting":
-        return "Connecting...";
-      case "listening":
-        return "Listening...";
-      case "processing":
-        return "Searching...";
-      case "speaking":
-        return ""; // No text when speaking - let the voice do the talking
+      case "connecting": return "Connecting...";
+      case "listening": return "Listening...";
+      case "processing": return "Searching...";
+      case "speaking": return "";
       default:
-        if (
-          isActive &&
-          (wsRef.current?.readyState === WebSocket.OPEN ||
-            globalConnectionActive)
-        ) {
+        if (isActive && (rtRef.current?.socket?.readyState === WebSocket.OPEN || globalConnectionActive)) {
           return "Listening...";
         }
         return "Ready";
     }
   };
 
-  // ⭐ ERROR BOUNDARY: Show error recovery UI if fatal error occurs
+  // Error boundary UI
   if (fatalError) {
     return (
       <div className="flex items-center justify-between w-full gap-3 p-4 bg-red-50 border border-red-200 rounded-lg">
         <div className="flex-1">
-          <p className="text-sm font-medium text-red-800">
-            Voice assistant encountered an error.
-          </p>
+          <p className="text-sm font-medium text-red-800">Voice assistant encountered an error.</p>
           <p className="text-xs text-red-600 mt-1">{fatalError}</p>
         </div>
         <button
-          onClick={() => {
-            setFatalError(null);
-            handleEndSession();
-          }}
+          onClick={() => { setFatalError(null); handleEndSession(); }}
           className="px-3 py-1.5 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700 transition-colors"
         >
           Reset
@@ -2526,36 +1218,23 @@ Remember: You're the friendly voice of Techjays. Be warm, be helpful, keep it br
 
   return (
     <div className="flex items-center justify-between w-full gap-3 animate-voiceFadeIn">
-      {/* Voice Orb - Compact size */}
+      {/* Voice Orb */}
       <div className="relative flex-shrink-0">
-        {/* Glow effect */}
         <div
           className={`absolute inset-0 w-9 h-9 sm:w-10 sm:h-10 rounded-full blur-md ${
-            voiceState === "listening"
-              ? "animate-voicePulseInline"
-              : voiceState === "speaking"
-              ? "animate-voiceSpeakingPulseInline"
-              : ""
+            voiceState === "listening" ? "animate-voicePulseInline" : voiceState === "speaking" ? "animate-voiceSpeakingPulseInline" : ""
           }`}
           style={{
-            background:
-              voiceState === "speaking"
-                ? "linear-gradient(to right, #22d3ee, #60a5fa)"
-                : error
-                ? "linear-gradient(to right, #ef4444, #dc2626)"
-                : "linear-gradient(to right, #818cf8, #6366f1)",
+            background: voiceState === "speaking"
+              ? "linear-gradient(to right, #22d3ee, #60a5fa)"
+              : error ? "linear-gradient(to right, #ef4444, #dc2626)" : "linear-gradient(to right, #818cf8, #6366f1)",
             opacity: 0.4,
           }}
         />
 
-        {/* Main orb */}
         <div
           className={`relative w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center overflow-hidden ${
-            voiceState === "listening"
-              ? "animate-voiceOrbInline"
-              : voiceState === "speaking"
-              ? "animate-voiceSpeakingOrbInline"
-              : ""
+            voiceState === "listening" ? "animate-voiceOrbInline" : voiceState === "speaking" ? "animate-voiceSpeakingOrbInline" : ""
           }`}
           style={{
             background: error
@@ -2568,198 +1247,63 @@ Remember: You're the friendly voice of Techjays. Be warm, be helpful, keep it br
             boxShadow: "0 0 20px rgba(99, 102, 241, 0.3)",
           }}
         >
-          {/* Realistic voice visualization based on actual audio modulation */}
           {voiceState === "listening" && !error && (
             <div className="flex items-center justify-center gap-0.5">
               {frequencyData.map((height, index) => (
-                <span
-                  key={index}
-                  style={{
-                    display: "block",
-                    width: "2px",
-                    height: `${height}px`,
-                    minHeight: "4px",
-                    background: "white",
-                    borderRadius: "2px",
-                    transition: "height 0.1s ease-out",
-                    transformOrigin: "bottom",
-                  }}
-                />
+                <span key={index} style={{ display: "block", width: "2px", height: `${height}px`, minHeight: "4px", background: "white", borderRadius: "2px", transition: "height 0.1s ease-out", transformOrigin: "bottom" }} />
               ))}
             </div>
           )}
 
-          {/* Animated bars for speaking */}
           {voiceState === "speaking" && !error && (
             <div className="flex items-center justify-center gap-0.5">
               {[8, 14, 18, 14, 8].map((height, index) => (
-                <span
-                  key={index}
-                  style={{
-                    display: "block",
-                    width: "2.5px",
-                    height: `${height}px`,
-                    background: "white",
-                    borderRadius: "2px",
-                    animation: "voiceBarAnimInline 0.6s ease-in-out infinite",
-                    animationDelay: `${index * 0.08}s`,
-                  }}
-                />
+                <span key={index} style={{ display: "block", width: "2.5px", height: `${height}px`, background: "white", borderRadius: "2px", animation: "voiceBarAnimInline 0.6s ease-in-out infinite", animationDelay: `${index * 0.08}s` }} />
               ))}
             </div>
           )}
 
-          {/* Processing/Connecting spinner */}
-          {(voiceState === "processing" || voiceState === "connecting") &&
-            !error && (
-              <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-            )}
-
-          {/* Idle or Error state - mic icon */}
-          {(voiceState === "idle" || error) && (
-            <Mic className="w-4 h-4 text-white" />
+          {(voiceState === "processing" || voiceState === "connecting") && !error && (
+            <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
           )}
+
+          {(voiceState === "idle" || error) && <Mic className="w-4 h-4 text-white" />}
         </div>
       </div>
 
-      {/* Status text - centered */}
+      {/* Status text */}
       <div className="flex-1 text-center min-w-0">
-        <p
-          className={`text-sm sm:text-base font-medium truncate ${
-            error ? "text-red-500" : "text-gray-700"
-          }`}
-        >
+        <p className={`text-sm sm:text-base font-medium truncate ${error ? "text-red-500" : "text-gray-700"}`}>
           {getStatusText()}
         </p>
       </div>
 
       {/* Control buttons */}
       <div className="flex items-center gap-2 flex-shrink-0">
-        {/* Interrupt button - only visible when speaking */}
         {voiceState === "speaking" && (
-          <button
-            onClick={handleInterrupt}
-            className="p-1.5 sm:p-2 rounded-full bg-gray-100 hover:bg-gray-200 transition-all duration-200 hover:scale-105"
-            title="Interrupt"
-          >
+          <button onClick={handleInterrupt} className="p-1.5 sm:p-2 rounded-full bg-gray-100 hover:bg-gray-200 transition-all duration-200 hover:scale-105" title="Interrupt">
             <MicOff className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-gray-600" />
           </button>
         )}
 
-        {/* End session button */}
-        <button
-          onClick={handleEndSession}
-          className="p-1.5 sm:p-2 rounded-full transition-all duration-200 hover:scale-105"
-          style={{
-            background: "linear-gradient(135deg, #ef4444 0%, #dc2626 100%)",
-          }}
-          title="End Session"
-        >
+        <button onClick={handleEndSession} className="p-1.5 sm:p-2 rounded-full transition-all duration-200 hover:scale-105" style={{ background: "linear-gradient(135deg, #ef4444 0%, #dc2626 100%)" }} title="End Session">
           <PhoneOff className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
         </button>
       </div>
 
-      {/* Component-specific styles */}
+      {/* Styles */}
       <style>{`
-        @keyframes loadingDotBounce {
-          0%, 100% {
-            transform: translateY(0);
-          }
-          50% {
-            transform: translateY(-8px);
-          }
-        }
-        .loading-dot-bounce {
-          animation: loadingDotBounce 1.4s ease-in-out infinite;
-        }
-        
-        @keyframes voiceFadeIn {
-          from { opacity: 0; transform: scale(0.95); }
-          to { opacity: 1; transform: scale(1); }
-        }
-        .animate-voiceFadeIn {
-          animation: voiceFadeIn 0.2s ease-out;
-        }
-
-        @keyframes voicePulseInline {
-          0%, 100% {
-            transform: scale(1);
-            opacity: 0.3;
-          }
-          50% {
-            transform: scale(1.15);
-            opacity: 0.5;
-          }
-        }
-        .animate-voicePulseInline {
-          animation: voicePulseInline 1.5s ease-in-out infinite;
-        }
-
-        @keyframes voiceOrbInline {
-          0%, 100% {
-            transform: scale(1);
-          }
-          50% {
-            transform: scale(1.05);
-          }
-        }
-        .animate-voiceOrbInline {
-          animation: voiceOrbInline 1.5s ease-in-out infinite;
-        }
-
-        @keyframes voiceSpeakingPulseInline {
-          0%, 100% {
-            transform: scale(1);
-            opacity: 0.35;
-          }
-          50% {
-            transform: scale(1.2);
-            opacity: 0.5;
-          }
-        }
-        .animate-voiceSpeakingPulseInline {
-          animation: voiceSpeakingPulseInline 1s ease-in-out infinite;
-        }
-
-        @keyframes voiceSpeakingOrbInline {
-          0%, 100% {
-            transform: scale(1);
-          }
-          25% {
-            transform: scale(1.03);
-          }
-          50% {
-            transform: scale(1.06);
-          }
-          75% {
-            transform: scale(1.03);
-          }
-        }
-        .animate-voiceSpeakingOrbInline {
-          animation: voiceSpeakingOrbInline 0.8s ease-in-out infinite;
-        }
-
-        @keyframes voiceWaveAnimInline {
-          0%, 100% {
-            transform: scaleY(0.5);
-            opacity: 0.6;
-          }
-          50% {
-            transform: scaleY(1);
-            opacity: 1;
-          }
-        }
-
-        @keyframes voiceBarAnimInline {
-          0%, 100% {
-            transform: scaleY(0.4);
-            opacity: 0.6;
-          }
-          50% {
-            transform: scaleY(1.2);
-            opacity: 1;
-          }
-        }
+        @keyframes voiceFadeIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+        .animate-voiceFadeIn { animation: voiceFadeIn 0.2s ease-out; }
+        @keyframes voicePulseInline { 0%, 100% { transform: scale(1); opacity: 0.3; } 50% { transform: scale(1.15); opacity: 0.5; } }
+        .animate-voicePulseInline { animation: voicePulseInline 1.5s ease-in-out infinite; }
+        @keyframes voiceOrbInline { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
+        .animate-voiceOrbInline { animation: voiceOrbInline 1.5s ease-in-out infinite; }
+        @keyframes voiceSpeakingPulseInline { 0%, 100% { transform: scale(1); opacity: 0.35; } 50% { transform: scale(1.2); opacity: 0.5; } }
+        .animate-voiceSpeakingPulseInline { animation: voiceSpeakingPulseInline 1s ease-in-out infinite; }
+        @keyframes voiceSpeakingOrbInline { 0%, 100% { transform: scale(1); } 25% { transform: scale(1.03); } 50% { transform: scale(1.06); } 75% { transform: scale(1.03); } }
+        .animate-voiceSpeakingOrbInline { animation: voiceSpeakingOrbInline 0.8s ease-in-out infinite; }
+        @keyframes voiceBarAnimInline { 0%, 100% { transform: scaleY(0.4); opacity: 0.6; } 50% { transform: scaleY(1.2); opacity: 1; } }
       `}</style>
     </div>
   );
