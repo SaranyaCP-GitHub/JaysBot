@@ -168,12 +168,12 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
           }
 
           const response = await fetch(RAG_API_ENDPOINT, {
-            method: "POST",
+              method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              session_key: currentSessionKey,
-              question: args.query,
-            }),
+              body: JSON.stringify({
+                session_key: currentSessionKey,
+                question: args.query,
+              }),
           });
 
           if (!response.ok) {
@@ -220,12 +220,12 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
 
         if (rtRef.current) {
           rtRef.current.send({
-            type: "conversation.item.create",
-            item: {
-              type: "function_call_output",
-              call_id: callId,
-              output: JSON.stringify(result),
-            },
+              type: "conversation.item.create",
+              item: {
+                type: "function_call_output",
+                call_id: callId,
+                output: JSON.stringify(result),
+              },
           });
           rtRef.current.send({ type: "response.create" });
         }
@@ -233,10 +233,10 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
         console.error(`[${instanceIdRef.current}] Function execution error:`, error);
         if (rtRef.current) {
           rtRef.current.send({
-            type: "conversation.item.create",
-            item: {
-              type: "function_call_output",
-              call_id: callId,
+              type: "conversation.item.create",
+              item: {
+                type: "function_call_output",
+                call_id: callId,
               output: JSON.stringify({ success: false, error: error.message }),
             },
           });
@@ -342,7 +342,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
       if (rtRef.current && !keepBuffer) {
         try {
           rtRef.current.send({ type: "input_audio_buffer.clear" });
-        } catch (err) {
+          } catch (err) {
           console.warn(`[${instanceIdRef.current}] ⚠️ Buffer clear failed:`, err.message);
         }
       }
@@ -351,7 +351,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
       if (rtRef.current && currentResponseIdRef.current && !isResponseDoneRef.current) {
         try {
           rtRef.current.send({ type: "response.cancel", response_id: currentResponseIdRef.current });
-        } catch (err) {
+          } catch (err) {
           console.warn(`[${instanceIdRef.current}] ⚠️ Cancel request failed:`, err.message);
         }
       }
@@ -621,99 +621,99 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
 
       rt.send({ type: "session.update", session: getSessionConfig() });
 
-      if (onShowChat && !hasShownChatRef.current) {
-        hasShownChatRef.current = true;
-        onShowChat();
-      }
+        if (onShowChat && !hasShownChatRef.current) {
+          hasShownChatRef.current = true;
+          onShowChat();
+        }
 
-      if (!hasGreetedRef.current && !globalHasGreeted) {
-        setTimeout(() => {
+        if (!hasGreetedRef.current && !globalHasGreeted) {
+          setTimeout(() => {
           if (rtRef.current) {
             rt.send({
-              type: "conversation.item.create",
-              item: {
-                type: "message",
-                role: "user",
+                  type: "conversation.item.create",
+                  item: {
+                    type: "message",
+                    role: "user",
                 content: [{ type: "input_text", text: GREETING_CONFIG.message }],
               },
             });
             rt.send({ type: "response.create" });
-            hasGreetedRef.current = true;
+              hasGreetedRef.current = true;
             globalHasGreeted = true;
             updateVoiceState("speaking");
-          }
+            }
         }, GREETING_CONFIG.delay);
-      } else {
-        updateVoiceState("listening");
-      }
+        } else {
+          updateVoiceState("listening");
+        }
 
       if (!isCapturingRef.current) startAudioCapture();
     });
 
     rt.socket.addEventListener('close', (event) => {
-      isConnectingRef.current = false;
+        isConnectingRef.current = false;
       console.log(`[${instanceIdRef.current}] Connection closed. Code: ${event.code}`);
 
-      if (event.code === 1000) {
+        if (event.code === 1000) {
         rtRef.current = null;
-        globalConnectionActive = false;
+          globalConnectionActive = false;
         globalRealtimeClient = null;
 
-        if (isActive && voiceStateRef.current !== "idle") {
-          setTimeout(() => {
+          if (isActive && voiceStateRef.current !== "idle") {
+            setTimeout(() => {
             if (isActive && connectRealtimeRef.current && !rtRef.current) {
               connectRealtimeRef.current();
-            }
-          }, 500);
+              }
+            }, 500);
+          }
+          return;
         }
-        return;
-      }
 
       const timeSinceLastInterrupt = Date.now() - lastInterruptTimeRef.current;
       if (event.code === 1006 && (timeSinceLastInterrupt < 3000 || isProcessingResponseRef.current)) {
         rtRef.current = null;
-        globalConnectionActive = false;
+          globalConnectionActive = false;
         globalRealtimeClient = null;
-        isProcessingResponseRef.current = false;
-        isResponseDoneRef.current = true;
+          isProcessingResponseRef.current = false;
+          isResponseDoneRef.current = true;
 
         if (voiceStateRef.current !== "idle" && voiceStateRef.current !== "processing") {
-          updateVoiceState("listening");
-        }
+            updateVoiceState("listening");
+          }
 
-        setTimeout(() => {
+          setTimeout(() => {
           if (isActive && connectRealtimeRef.current && !rtRef.current) {
             connectRealtimeRef.current();
-          }
-        }, 500);
-        return;
-      }
+            }
+          }, 500);
+          return;
+        }
 
       if (isReconnectingRef.current) return;
 
       if (isActive && voiceStateRef.current !== "idle") {
-        isReconnectingRef.current = true;
+          isReconnectingRef.current = true;
         setTimeout(() => {
           rtRef.current = null;
-          globalConnectionActive = false;
+            globalConnectionActive = false;
           globalRealtimeClient = null;
-          isConnectingRef.current = false;
+            isConnectingRef.current = false;
 
           if (connectRealtimeRef.current) {
             connectRealtimeRef.current()
               .then(() => { isReconnectingRef.current = false; })
               .catch(() => {
-                isReconnectingRef.current = false;
-                setError("Connection lost. Please try again.");
-                updateVoiceState("idle");
-              });
-          } else {
-            isReconnectingRef.current = false;
-          }
+                  isReconnectingRef.current = false;
+                  setError("Connection lost. Please try again.");
+                  updateVoiceState("idle");
+                });
+            } else {
+              isReconnectingRef.current = false;
+            }
         }, 500);
-      } else {
-        cleanup(false);
-        globalConnectionActive = false;
+        } else {
+          cleanup(false);
+          globalConnectionActive = false;
         globalRealtimeClient = null;
       }
     });
@@ -729,27 +729,27 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
     rt.on('session.updated', () => {});
 
     rt.on('input_audio_buffer.speech_started', () => {
-      if (currentResponseIdRef.current) {
-        interruptedResponseIdRef.current = currentResponseIdRef.current;
+          if (currentResponseIdRef.current) {
+            interruptedResponseIdRef.current = currentResponseIdRef.current;
       }
 
       if (isProcessingResponseRef.current && currentAiTextRef.current.trim() === "") {
-        typingIndicatorClearedRef.current = true;
-      }
+            typingIndicatorClearedRef.current = true;
+          }
 
       if (currentAiTextRef.current.trim() !== "" && !currentAiTextSavedRef.current) {
-        if (onAddMessage) {
+            if (onAddMessage) {
           onAddMessage({ type: "ai", text: currentAiTextRef.current + "...", isVoice: true, isStreaming: false });
           currentAiTextSavedRef.current = true;
         }
       }
 
       interruptAgent("vad_speech", true);
-      currentAiTextRef.current = "";
-      setAiResponse("");
-      updateVoiceState("listening");
-      currentTranscriptRef.current = "";
-      setTranscript("");
+          currentAiTextRef.current = "";
+          setAiResponse("");
+          updateVoiceState("listening");
+          currentTranscriptRef.current = "";
+          setTranscript("");
     });
 
     rt.on('input_audio_buffer.speech_stopped', () => {
@@ -766,45 +766,45 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
       if (event.transcript) {
         if (isPhantomTranscription(event.transcript)) {
           console.log(`[${instanceIdRef.current}] 🚫 Ignoring phantom transcription`);
-          return;
-        }
+              return;
+            }
 
-        lastProcessedItemIdRef.current = itemId;
+            lastProcessedItemIdRef.current = itemId;
         currentTranscriptRef.current = event.transcript;
         setTranscript(event.transcript);
 
         if (onAddMessage) {
           onAddMessage({ type: "user", text: event.transcript, isVoice: true });
-          typingIndicatorClearedRef.current = false;
-        }
+              typingIndicatorClearedRef.current = false;
+            }
 
-        if (onShowChat && !hasShownChatRef.current) {
-          hasShownChatRef.current = true;
-          onShowChat();
-        }
-      }
+            if (onShowChat && !hasShownChatRef.current) {
+              hasShownChatRef.current = true;
+              onShowChat();
+            }
+          }
     });
 
     rt.on('response.created', (event) => {
       const newResponseId = event.response?.id;
-      if (newResponseId) {
+          if (newResponseId) {
         if (newResponseId === currentResponseIdRef.current) return;
 
         if (interruptedResponseIdRef.current && interruptedResponseIdRef.current !== newResponseId) {
-          interruptedResponseIdRef.current = null;
-        }
+              interruptedResponseIdRef.current = null;
+            }
 
-        currentResponseIdRef.current = newResponseId;
-        isProcessingResponseRef.current = true;
+            currentResponseIdRef.current = newResponseId;
+            isProcessingResponseRef.current = true;
         isResponseDoneRef.current = false;
         canSendAudioRef.current = false;
-        currentAiTextRef.current = "";
-        currentAiTextSavedRef.current = false;
+            currentAiTextRef.current = "";
+            currentAiTextSavedRef.current = false;
         typingIndicatorClearedRef.current = false;
         // 🌬️ Reset breath flag for new response - Teja will take a breath before speaking
         isFirstChunkOfResponseRef.current = true;
-        updateVoiceState("processing");
-        clearInputAudioBuffer();
+            updateVoiceState("processing");
+            clearInputAudioBuffer();
       }
     });
 
@@ -819,13 +819,13 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
 
       if (event.delta && deltaResponseId === currentResponseIdRef.current && deltaResponseId !== lastProcessedResponseIdRef.current) {
         currentAiResponseRef.current += event.delta;
-        setAiResponse(currentAiResponseRef.current);
+            setAiResponse(currentAiResponseRef.current);
 
-        if (onAddMessage && currentAiResponseRef.current) {
-          onAddMessage({
-            type: "ai",
-            text: currentAiResponseRef.current,
-            isVoice: true,
+            if (onAddMessage && currentAiResponseRef.current) {
+              onAddMessage({
+                type: "ai",
+                text: currentAiResponseRef.current,
+                isVoice: true,
             isStreaming: true,
             isTyping: false,
             replaceTyping: true,
@@ -841,27 +841,27 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
       if (responseId && responseId === lastProcessedResponseIdRef.current) return;
       if (responseId && responseId !== currentResponseIdRef.current) return;
 
-      const transcriptText = currentAiTextRef.current.trim();
-      if (!transcriptText) {
-        currentAiResponseRef.current = "";
-        return;
-      }
+          const transcriptText = currentAiTextRef.current.trim();
+          if (!transcriptText) {
+            currentAiResponseRef.current = "";
+            return;
+          }
 
       if (responseId) lastProcessedResponseIdRef.current = responseId;
 
       if (onAddMessage && transcriptText && !currentAiTextSavedRef.current) {
-        onAddMessage({
-          type: "ai",
-          text: transcriptText,
-          isVoice: true,
+            onAddMessage({
+              type: "ai",
+              text: transcriptText,
+              isVoice: true,
           isStreaming: false,
           isTyping: false,
           replaceTyping: true,
         });
-        currentAiTextSavedRef.current = true;
-      }
+            currentAiTextSavedRef.current = true;
+          }
 
-      currentAiResponseRef.current = "";
+          currentAiResponseRef.current = "";
     });
 
     rt.on('response.audio.delta', (event) => {
@@ -879,9 +879,9 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
           isFirstChunkOfResponseRef.current = false;
         }
         
-        audioQueueRef.current.push(audioData);
-        playAudioQueue();
-      }
+            audioQueueRef.current.push(audioData);
+            playAudioQueue();
+          }
     });
 
     rt.on('response.audio.done', () => {});
@@ -896,42 +896,42 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
 
       try {
         const functionArgs = JSON.parse(event.arguments);
-        executeFunctionCall(callId, functionName, functionArgs);
-      } catch (error) {
+            executeFunctionCall(callId, functionName, functionArgs);
+          } catch (error) {
         console.error(`[${instanceIdRef.current}] Failed to parse function arguments:`, error);
         if (rtRef.current) {
           rtRef.current.send({
-            type: "conversation.item.create",
-            item: {
-              type: "function_call_output",
-              call_id: callId,
+                  type: "conversation.item.create",
+                  item: {
+                    type: "function_call_output",
+                    call_id: callId,
               output: JSON.stringify({ success: false, error: "Failed to parse function arguments" }),
-            },
+                  },
           });
-        }
-      }
+            }
+          }
     });
 
     rt.on('response.done', () => {
-      isResponseDoneRef.current = true;
-      clearInputAudioBuffer();
+          isResponseDoneRef.current = true;
+          clearInputAudioBuffer();
 
-      const finalText = currentAiTextRef.current.trim();
+          const finalText = currentAiTextRef.current.trim();
       if (finalText !== "" && !currentAiTextSavedRef.current && onAddMessage) {
         onAddMessage({ type: "ai", text: finalText });
       }
 
-      waitForAudioToFinish().then(() => {
-        setTimeout(() => {
-          isProcessingResponseRef.current = false;
-          currentResponseIdRef.current = null;
+          waitForAudioToFinish().then(() => {
+            setTimeout(() => {
+              isProcessingResponseRef.current = false;
+              currentResponseIdRef.current = null;
           canSendAudioRef.current = true;
-          currentAiTextRef.current = "";
-          setAiResponse("");
+              currentAiTextRef.current = "";
+              setAiResponse("");
 
           if (voiceStateRef.current !== "idle" && voiceStateRef.current !== "processing") {
-            updateVoiceState("listening");
-          }
+                updateVoiceState("listening");
+              }
         }, 300);
       });
     });
@@ -941,34 +941,34 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
 
       if (error?.code === "response_cancel_not_active" || error?.message?.includes("no active response") || error?.message?.includes("cancel")) {
         if (isProcessingResponseRef.current && currentAiTextRef.current.trim() === "") {
-          typingIndicatorClearedRef.current = true;
-        }
-        isResponseDoneRef.current = true;
-        isProcessingResponseRef.current = false;
-        canSendAudioRef.current = true;
+              typingIndicatorClearedRef.current = true;
+            }
+            isResponseDoneRef.current = true;
+            isProcessingResponseRef.current = false;
+            canSendAudioRef.current = true;
         if (voiceStateRef.current === "speaking") updateVoiceState("listening");
         return;
       }
 
       console.error("API Error:", error);
-      const errorText = currentAiTextRef.current.trim();
-      if (isProcessingResponseRef.current && onAddMessage && errorText) {
+            const errorText = currentAiTextRef.current.trim();
+            if (isProcessingResponseRef.current && onAddMessage && errorText) {
         onAddMessage({ type: "ai", text: errorText, isVoice: true, isTyping: false, isStreaming: false });
       }
-      if (isProcessingResponseRef.current && !errorText) {
-        typingIndicatorClearedRef.current = true;
-      }
+            if (isProcessingResponseRef.current && !errorText) {
+              typingIndicatorClearedRef.current = true;
+            }
       setError(error?.message || "An error occurred");
-      isProcessingResponseRef.current = false;
-      canSendAudioRef.current = true;
+            isProcessingResponseRef.current = false;
+            canSendAudioRef.current = true;
     });
   }, [
-    onAddMessage,
-    onShowChat,
-    updateVoiceState,
-    clearInputAudioBuffer,
-    executeFunctionCall,
-    interruptAgent,
+      onAddMessage,
+      onShowChat,
+      updateVoiceState,
+      clearInputAudioBuffer,
+      executeFunctionCall,
+      interruptAgent,
     startAudioCapture,
     playAudioQueue,
     waitForAudioToFinish,
@@ -1003,7 +1003,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
       rtRef.current = rt;
       globalRealtimeClient = rt;
       setupEventHandlers(rt);
-    } catch (err) {
+          } catch (err) {
       console.error(`[${instanceIdRef.current}] Failed to connect:`, err);
       isConnectingRef.current = false;
       setError("Failed to connect. Please try again.");
@@ -1122,7 +1122,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
 
     if (!currentIsActive) {
       if (hasStartedRef.current && cleanupRef.current) {
-        cleanupRef.current(true);
+          cleanupRef.current(true);
         hasStartedRef.current = false;
       }
       return;
@@ -1183,7 +1183,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
 
     return () => {
       if (!currentIsActive && hasStartedRef.current && cleanupRef.current) {
-        cleanupRef.current(true);
+          cleanupRef.current(true);
         hasStartedRef.current = false;
       }
     };
@@ -1244,7 +1244,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
           }`}
           style={{
             background: voiceState === "speaking"
-              ? "linear-gradient(to right, #22d3ee, #60a5fa)"
+                ? "linear-gradient(to right, #22d3ee, #60a5fa)"
               : error ? "linear-gradient(to right, #ef4444, #dc2626)" : "linear-gradient(to right, #818cf8, #6366f1)",
             opacity: 0.4,
           }}
@@ -1282,8 +1282,8 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
           )}
 
           {(voiceState === "processing" || voiceState === "connecting") && !error && (
-            <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-          )}
+              <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+            )}
 
           {(voiceState === "idle" || error) && <Mic className="w-4 h-4 text-white" />}
         </div>
