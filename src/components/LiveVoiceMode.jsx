@@ -13,6 +13,9 @@ import {
   float32ToPcm16,
   isPhantomTranscription,
   AUDIO_CONSTRAINTS,
+  generateBreathBuffer,
+  shouldAddBreath,
+  BREATH_CONFIG,
 } from "./voiceAudioUtils";
 
 // Import session configuration
@@ -526,6 +529,9 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
     }
   }, [stopAudioCapture, startFrequencyAnalysis]);
 
+  // Track if this is the first audio chunk of a new response (for breath injection)
+  const isFirstChunkOfResponseRef = useRef(true);
+
   // Play audio from queue
   const playAudioQueue = useCallback(async () => {
     if (isPlayingRef.current || audioQueueRef.current.length === 0) return;
@@ -534,6 +540,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
     while (audioQueueRef.current.length > 0) {
       if (!isPlayingRef.current) break;
       const audioData = audioQueueRef.current.shift();
+
       try {
         await playAudioBuffer(audioData);
       } catch (error) {
@@ -794,6 +801,8 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
         currentAiTextRef.current = "";
         currentAiTextSavedRef.current = false;
         typingIndicatorClearedRef.current = false;
+        // 🌬️ Reset breath flag for new response - Teja will take a breath before speaking
+        isFirstChunkOfResponseRef.current = true;
         updateVoiceState("processing");
         clearInputAudioBuffer();
       }
@@ -861,6 +870,15 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
       const audioResponseId = event.response_id || event.response?.id;
       if (event.delta && audioResponseId === currentResponseIdRef.current) {
         const audioData = base64ToArrayBuffer(event.delta);
+        
+        // 🌬️ Inject breath BEFORE the first audio chunk of a response
+        // This makes Teja sound like she's taking a breath before speaking
+        if (isFirstChunkOfResponseRef.current && shouldAddBreath(null, audioData)) {
+          const breathBuffer = generateBreathBuffer();
+          audioQueueRef.current.push(breathBuffer);
+          isFirstChunkOfResponseRef.current = false;
+        }
+        
         audioQueueRef.current.push(audioData);
         playAudioQueue();
       }

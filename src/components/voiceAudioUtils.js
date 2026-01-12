@@ -141,3 +141,84 @@ export const AUDIO_CONSTRAINTS = {
   },
 };
 
+/**
+ * Breath/pause effect configuration
+ * Creates a brief natural pause before speaking (pure silence)
+ * Set enabled: false to disable completely
+ */
+export const BREATH_CONFIG = {
+  // Set to false to disable breath pauses entirely
+  enabled: true,
+  // Probability of adding pause before response
+  probability: 0.4,
+  // Duration of silence in milliseconds (keep short: 80-150ms)
+  durationMs: 100,
+  // Not used (silence only) but kept for API compatibility
+  volume: 0,
+  // Sample rate must match Azure Realtime API (24kHz PCM16)
+  sampleRate: 24000,
+};
+
+/**
+ * Generate a natural pause (pure silence) before speaking
+ * 
+ * Rather than trying to synthesize breath sounds (which never sound natural),
+ * we just create a brief moment of silence - the natural pause before speaking.
+ * 
+ * @param {number} durationMs - Duration in milliseconds
+ * @param {number} volume - Not used (silence)
+ * @param {number} sampleRate - Audio sample rate
+ * @returns {Float32Array} - Silent audio samples
+ */
+export const generateBreathSound = (
+  durationMs = BREATH_CONFIG.durationMs,
+  volume = BREATH_CONFIG.volume,
+  sampleRate = BREATH_CONFIG.sampleRate
+) => {
+  const numSamples = Math.floor((durationMs / 1000) * sampleRate);
+  // Pure silence - just a natural pause
+  return new Float32Array(numSamples);
+};
+
+/**
+ * Generate breath sound as PCM16 ArrayBuffer (ready for playback)
+ * @param {number} durationMs - Duration in milliseconds  
+ * @param {number} volume - Volume level (0-1)
+ * @returns {ArrayBuffer} - PCM16 encoded breath sound
+ */
+export const generateBreathBuffer = (
+  durationMs = BREATH_CONFIG.durationMs,
+  volume = BREATH_CONFIG.volume
+) => {
+  const float32Samples = generateBreathSound(durationMs, volume);
+  const pcm16 = float32ToPcm16(float32Samples);
+  return pcm16.buffer;
+};
+
+/**
+ * Decide whether to add a breath sound
+ * Breath triggers when transitioning from silence to speech (start of response)
+ * This sounds natural - like Teja taking a breath before speaking
+ * 
+ * @param {ArrayBuffer} previousChunk - Previous audio chunk (or null if first)
+ * @param {ArrayBuffer} currentChunk - Current audio chunk
+ * @returns {boolean} - True if breath should be added
+ */
+export const shouldAddBreath = (previousChunk, currentChunk) => {
+  if (!BREATH_CONFIG.enabled) return false;
+
+  // Only add breath when transitioning from silence to speech
+  // (i.e., no previous chunk but we have a current chunk = start of response)
+  const isStartingSpeech = !previousChunk && currentChunk;
+  
+  // Random probability check
+  const passesLuck = Math.random() < BREATH_CONFIG.probability;
+
+  if (isStartingSpeech && passesLuck) {
+    console.log('🌬️ Adding breath before Teja starts speaking');
+    return true;
+  }
+
+  return false;
+};
+
