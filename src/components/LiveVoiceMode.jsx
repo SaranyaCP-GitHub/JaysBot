@@ -621,9 +621,10 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
             -- Techjays was founded by Philip Samuelraj
             -- Techjays CEO is Philip Samuelraj
             -- Techjays CTO is Jesso Clarence
+            -- Techjays Director of Operations & Strategy is Deenadayalan M /Deena
             -- Tagline: "The best way to build your software."
             -- Phone number: +1 (385) 275-6130
-            -- Senior Leadership Team (SLT) includes: Philip Samuelraj, Jesso Clarence, Keerthi U S, Dharmaraj, Arun M P, Aparna Pillai
+            -- Senior Leadership Team (SLT) includes: Philip Samuelraj, Jesso Clarence, Keerthi U S, Dharmaraj, Arun M P, Aparna Pillai, Deena
             
             You have NO general knowledge about Techjays. You can ONLY answer using information retrieved from the search_techjays_knowledge function.
             
@@ -720,7 +721,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
               model: "whisper-1",
               language: "en",
               prompt:
-                "Philip Samuelraj, Jesso Clarence, Dharmaraj, Agentic AI, RAG, MLOps, ChromaDB, Palantir, Techjays, CEO, Arun, Aparna, DSPy, Bracketology, Via Analytics, SpreeTail, NSR, Vortex, Accoes, Fayvit, and Shipdude",
+                "Philip Samuelraj, Jesso Clarence, Deena, Dharmaraj, Agentic AI, RAG, MLOps, ChromaDB, Palantir, Techjays, CEO, Arun, Aparna, DSPy, Bracketology, Via Analytics, SpreeTail, NSR, Vortex, Accoes, Fayvit, and Shipdude",
             },
 
             // FIX 2: Enhanced turn detection to filter out background hum
