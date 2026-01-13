@@ -1,7 +1,12 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Mic, AudioLines, Sparkles, ChevronDown } from "lucide-react";
 import LiveVoiceMode from "./LiveVoiceMode";
+import LiveVoiceModePOC from "./LiveVoiceModePOC"; // ⭐ Azure VoiceLive SDK POC
 import SearchInput from "./searchInput/SearchInput";
+
+// Toggle between original and VoiceLive POC
+// Your existing code already uses /voice-live/realtime - SDK should work with TokenCredential!
+const USE_VOICELIVE_POC = false;
 import IconButton from "../ui/atom/IconButton";
 import LoadingDots from "../ui/atom/LoadingDots";
 import { parseBoldText } from "../utils/textUtils";
@@ -141,18 +146,29 @@ const AIAssistantPopup = () => {
   return (
     <div id="techjays-chatbot" className="bg-transparent relative overflow-auto">
       {/* LiveVoiceMode - rendered once, always present to prevent remounting */}
+      {/* ⭐ Toggle between original and VoiceLive POC using USE_VOICELIVE_POC flag */}
       {isLiveVoiceActive && (
         <div className="fixed bottom-0 left-0 right-0 z-[60] px-4 pb-4 sm:px-4 sm:pb-4">
           <div className="w-full max-w-full sm:max-w-[656px] mx-auto">
             <div className="input-glow-container rounded-full">
               <div className="rounded-full h-12 flex items-center p-3">
-                <LiveVoiceMode
-                  key="live-voice-mode" // Stable key to prevent remounting
-                  isActive={isLiveVoiceActive}
-                  onClose={closeLiveVoice}
-                  onAddMessage={addVoiceMessage}
-                  onShowChat={showChatForVoice}
-                />
+                {USE_VOICELIVE_POC ? (
+                  <LiveVoiceModePOC
+                    key="live-voice-mode-poc"
+                    isActive={isLiveVoiceActive}
+                    onClose={closeLiveVoice}
+                    onAddMessage={addVoiceMessage}
+                    onShowChat={showChatForVoice}
+                  />
+                ) : (
+                  <LiveVoiceMode
+                    key="live-voice-mode"
+                    isActive={isLiveVoiceActive}
+                    onClose={closeLiveVoice}
+                    onAddMessage={addVoiceMessage}
+                    onShowChat={showChatForVoice}
+                  />
+                )}
               </div>
             </div>
           </div>

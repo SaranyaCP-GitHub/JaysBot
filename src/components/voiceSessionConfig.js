@@ -237,7 +237,7 @@ export const getSessionConfig = () => {
     Now go make someone's day! 🚀`,
     
     
-    voice: "en-US-SaraNeural",
+    voice: "sage",
     input_audio_format: "pcm16",
     output_audio_format: "pcm16",
 
