@@ -894,7 +894,11 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
     rt.on('response.audio.done', () => {});
 
     rt.on('response.function_call_arguments.delta', () => {
-      if (voiceStateRef.current !== "processing") updateVoiceState("processing");
+      if (voiceStateRef.current !== "processing") {
+        updateVoiceState("processing");
+        // Update UI to show user we're searching
+        setTranscript("Searching...");
+      }
     });
 
     rt.on('response.function_call_arguments.done', (event) => {
