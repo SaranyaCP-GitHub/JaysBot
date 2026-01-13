@@ -34,6 +34,7 @@ import {
 let globalConnectionActive = false;
 let globalRealtimeClient = null;
 let globalHasGreeted = false;
+let globalHasHadConversation = false; // Tracks if user has had a conversation (persists across reconnects)
 
 /**
  * LiveVoiceMode - Inline voice chat component that fits within input box
@@ -629,17 +630,23 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
         if (!hasGreetedRef.current && !globalHasGreeted) {
           setTimeout(() => {
           if (rtRef.current) {
+            // Use welcome back message if user had a previous conversation, otherwise use full greeting
+            const greetingMessage = globalHasHadConversation 
+              ? GREETING_CONFIG.welcomeBackMessage 
+              : GREETING_CONFIG.message;
+            
             rt.send({
                   type: "conversation.item.create",
                   item: {
                     type: "message",
                     role: "user",
-                content: [{ type: "input_text", text: GREETING_CONFIG.message }],
+                content: [{ type: "input_text", text: greetingMessage }],
               },
             });
             rt.send({ type: "response.create" });
               hasGreetedRef.current = true;
             globalHasGreeted = true;
+            globalHasHadConversation = true; // Mark that user has had a conversation
             updateVoiceState("speaking");
             }
         }, GREETING_CONFIG.delay);
