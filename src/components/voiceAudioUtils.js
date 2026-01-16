@@ -1,7 +1,7 @@
 /**
  * Voice Audio Utilities
  * Pure utility functions for audio processing in LiveVoiceMode
- * 
+ *
  * These functions handle:
  * - Audio format conversion (PCM16, Float32, Base64)
  * - Audio buffer manipulation
@@ -150,7 +150,7 @@ export const BREATH_CONFIG = {
   // Set to false to disable breath pauses entirely
   enabled: true,
   // Probability of adding pause before response
-  probability: 0.4,
+  probability: 0.35,
   // Duration of silence in milliseconds (keep short: 80-150ms)
   durationMs: 100,
   // Not used (silence only) but kept for API compatibility
@@ -161,10 +161,10 @@ export const BREATH_CONFIG = {
 
 /**
  * Generate a natural pause (pure silence) before speaking
- * 
+ *
  * Rather than trying to synthesize breath sounds (which never sound natural),
  * we just create a brief moment of silence - the natural pause before speaking.
- * 
+ *
  * @param {number} durationMs - Duration in milliseconds
  * @param {number} volume - Not used (silence)
  * @param {number} sampleRate - Audio sample rate
@@ -182,7 +182,7 @@ export const generateBreathSound = (
 
 /**
  * Generate breath sound as PCM16 ArrayBuffer (ready for playback)
- * @param {number} durationMs - Duration in milliseconds  
+ * @param {number} durationMs - Duration in milliseconds
  * @param {number} volume - Volume level (0-1)
  * @returns {ArrayBuffer} - PCM16 encoded breath sound
  */
@@ -199,7 +199,7 @@ export const generateBreathBuffer = (
  * Decide whether to add a breath sound
  * Breath triggers when transitioning from silence to speech (start of response)
  * This sounds natural - like Teja taking a breath before speaking
- * 
+ *
  * @param {ArrayBuffer} previousChunk - Previous audio chunk (or null if first)
  * @param {ArrayBuffer} currentChunk - Current audio chunk
  * @returns {boolean} - True if breath should be added
@@ -210,15 +210,14 @@ export const shouldAddBreath = (previousChunk, currentChunk) => {
   // Only add breath when transitioning from silence to speech
   // (i.e., no previous chunk but we have a current chunk = start of response)
   const isStartingSpeech = !previousChunk && currentChunk;
-  
+
   // Random probability check
   const passesLuck = Math.random() < BREATH_CONFIG.probability;
 
   if (isStartingSpeech && passesLuck) {
-    console.log('🌬️ Adding breath before Teja starts speaking');
+    console.log("🌬️ Adding breath before Teja starts speaking");
     return true;
   }
 
   return false;
 };
-

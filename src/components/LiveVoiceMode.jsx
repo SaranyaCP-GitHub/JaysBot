@@ -39,7 +39,7 @@ let globalHasHadConversation = false; // Tracks if user has had a conversation (
 /**
  * LiveVoiceMode - Inline voice chat component that fits within input box
  * Handles speech-to-speech conversation with Azure OpenAI Realtime API
- * 
+ *
  * ⭐ MIGRATED: Now uses OpenAI JavaScript SDK with Azure Realtime API support
  * Reference: https://devblogs.microsoft.com/azure-sdk/introducing-azure-openai-realtime-api-support-in-javascript/
  *
@@ -149,7 +149,10 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
       }
       throw new Error("No session key in response");
     } catch (error) {
-      console.error(`[${instanceIdRef.current}] Error creating RAG session:`, error);
+      console.error(
+        `[${instanceIdRef.current}] Error creating RAG session:`,
+        error
+      );
       return null;
     }
   }, []);
@@ -157,92 +160,151 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
   // Execute function calls from the AI
   const executeFunctionCall = useCallback(
     async (callId, functionName, args) => {
+      console.log(
+        `[${instanceIdRef.current}] 🔍 Executing function: ${functionName}`,
+        args
+      );
+
       try {
         let result;
 
         if (functionName === "search_techjays_knowledge") {
           updateVoiceState("processing");
+
+          // Check connection before starting
+          if (!rtRef.current) {
+            throw new Error("Connection lost during function call");
+          }
+
           const currentSessionKey = await getOrCreateSessionKey();
 
           if (!currentSessionKey) {
             throw new Error("Failed to obtain session key");
           }
 
-          const response = await fetch(RAG_API_ENDPOINT, {
+          // ⭐ Add timeout to prevent hanging
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+
+          try {
+            const response = await fetch(RAG_API_ENDPOINT, {
               method: "POST",
-            headers: { "Content-Type": "application/json" },
+              headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 session_key: currentSessionKey,
                 question: args.query,
               }),
-          });
+              signal: controller.signal, // Add abort signal
+            });
 
-          if (!response.ok) {
-            throw new Error("Failed to fetch from knowledge base");
-          }
-          updateVoiceState("processing");
+            clearTimeout(timeoutId);
 
-          const data = await response.json();
-
-          if (data.result && data.response && data.response.text) {
-            if (data.session_key) {
-              sessionStorage.setItem("session_key", data.session_key);
-              setSessionKey(data.session_key);
-              sessionKeyRef.current = data.session_key;
+            if (!response.ok) {
+              throw new Error(
+                `Failed to fetch from knowledge base: ${response.status} ${response.statusText}`
+              );
             }
 
-            let botMessage = data.response.text;
+            const data = await response.json();
 
-            if (data.response.links && data.response.links.length > 0) {
-              const linkTexts = botMessage.split(", ");
-              let formattedLinks = "\n\nRelevant links:\n";
-              data.response.links.forEach((link, index) => {
-                const cleanedLink = link.replace(/<|>|\[|\]/g, "");
-                const linkText = linkTexts[index] ? linkTexts[index].trim() : `Link ${index + 1}`;
-                formattedLinks += `- ${linkText}: ${cleanedLink}\n`;
-              });
-              botMessage += formattedLinks;
+            if (data.result && data.response && data.response.text) {
+              if (data.session_key) {
+                sessionStorage.setItem("session_key", data.session_key);
+                setSessionKey(data.session_key);
+                sessionKeyRef.current = data.session_key;
+              }
+
+              let botMessage = data.response.text;
+
+              if (data.response.links && data.response.links.length > 0) {
+                const linkTexts = botMessage.split(", ");
+                let formattedLinks = "\n\nRelevant links:\n";
+                data.response.links.forEach((link, index) => {
+                  const cleanedLink = link.replace(/<|>|\[|\]/g, "");
+                  const linkText = linkTexts[index]
+                    ? linkTexts[index].trim()
+                    : `Link ${index + 1}`;
+                  formattedLinks += `- ${linkText}: ${cleanedLink}\n`;
+                });
+                botMessage += formattedLinks;
+              }
+
+              botMessage = botMessage.replace(/<link>/g, "").replace(/, $/, "");
+              botMessage = botMessage.replace(/\s*\.:\s*/g, "");
+
+              result = {
+                success: true,
+                answer: botMessage,
+                sources: data.response.links || [],
+              };
+            } else {
+              throw new Error("Invalid response format from knowledge base");
             }
-
-            botMessage = botMessage.replace(/<link>/g, "").replace(/, $/, "");
-            botMessage = botMessage.replace(/\s*\.:\s*/g, "");
-
-            result = {
-              success: true,
-              answer: botMessage,
-              sources: data.response.links || [],
-            };
-          } else {
-            throw new Error("Invalid response format from knowledge base");
+          } catch (fetchError) {
+            clearTimeout(timeoutId);
+            if (fetchError.name === "AbortError") {
+              throw new Error("API call timed out after 30 seconds");
+            }
+            throw fetchError;
           }
         } else {
-          result = { success: false, error: `Unknown function: ${functionName}` };
+          result = {
+            success: false,
+            error: `Unknown function: ${functionName}`,
+          };
         }
 
-        if (rtRef.current) {
-          rtRef.current.send({
-              type: "conversation.item.create",
-              item: {
-                type: "function_call_output",
-                call_id: callId,
-                output: JSON.stringify(result),
-              },
-          });
-          rtRef.current.send({ type: "response.create" });
+        // ⭐ Check connection before sending response
+        if (!rtRef.current) {
+          console.error(
+            `[${instanceIdRef.current}] ⚠️ Connection lost, cannot send function result`
+          );
+          // Try to recover state
+          updateVoiceState("listening");
+          return;
         }
+
+        console.log(
+          `[${instanceIdRef.current}] ✅ Function completed, sending result`
+        );
+
+        rtRef.current.send({
+          type: "conversation.item.create",
+          item: {
+            type: "function_call_output",
+            call_id: callId,
+            output: JSON.stringify(result),
+          },
+        });
+        rtRef.current.send({ type: "response.create" });
       } catch (error) {
-        console.error(`[${instanceIdRef.current}] Function execution error:`, error);
-        if (rtRef.current) {
-          rtRef.current.send({
-              type: "conversation.item.create",
-              item: {
-                type: "function_call_output",
-                call_id: callId,
-              output: JSON.stringify({ success: false, error: error.message }),
-            },
-          });
-          rtRef.current.send({ type: "response.create" });
+        console.error(
+          `[${instanceIdRef.current}] ❌ Function execution error:`,
+          error
+        );
+
+        // ⭐ Check connection before sending error response
+        if (!rtRef.current) {
+          console.error(
+            `[${instanceIdRef.current}] ⚠️ Connection lost, cannot send error response`
+          );
+          // Try to recover state
+          updateVoiceState("listening");
+          return;
         }
+
+        rtRef.current.send({
+          type: "conversation.item.create",
+          item: {
+            type: "function_call_output",
+            call_id: callId,
+            output: JSON.stringify({
+              success: false,
+              error: error.message || "Function execution failed",
+            }),
+          },
+        });
+        rtRef.current.send({ type: "response.create" });
       }
     },
     [getOrCreateSessionKey, updateVoiceState]
@@ -258,7 +320,9 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
         attempts++;
       }
       if (attempts >= MAX_WAIT_ATTEMPTS) {
-        throw new Error("Token fetch timeout - another fetch is taking too long");
+        throw new Error(
+          "Token fetch timeout - another fetch is taking too long"
+        );
       }
       return tokenRef.current ? { token: tokenRef.current } : null;
     }
@@ -268,20 +332,27 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
     try {
       const response = await fetch(SPEECH_TOKEN_API);
       if (!response.ok) {
-        throw new Error(`Failed to fetch token: ${response.status} ${response.statusText}`);
+        throw new Error(
+          `Failed to fetch token: ${response.status} ${response.statusText}`
+        );
       }
 
       const data = await response.json();
       tokenRef.current = data.token;
       expiresAtRef.current = data.expiresAt ? new Date(data.expiresAt) : null;
 
-      const expiresIn = data.expiresIn ||
-        (data.expiresAt ? Math.floor((new Date(data.expiresAt).getTime() - Date.now()) / 1000) : 1200);
+      const expiresIn =
+        data.expiresIn ||
+        (data.expiresAt
+          ? Math.floor((new Date(data.expiresAt).getTime() - Date.now()) / 1000)
+          : 1200);
 
       const refreshIn = Math.min(3600, Math.max(0, expiresIn - 300));
 
       if (expiresIn < 600) {
-        console.warn(`[${instanceIdRef.current}] ⚠️ Token expiring soon: ${expiresIn}s remaining`);
+        console.warn(
+          `[${instanceIdRef.current}] ⚠️ Token expiring soon: ${expiresIn}s remaining`
+        );
       }
 
       if (tokenRefreshTimerRef.current) {
@@ -308,19 +379,31 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
     (reason = "user_action", keepBuffer = false) => {
       const now = Date.now();
       if (now - lastInterruptTimeRef.current < 500) {
-        console.log(`[${instanceIdRef.current}] ⏸️ Interrupt debounced (too soon)`);
+        console.log(
+          `[${instanceIdRef.current}] ⏸️ Interrupt debounced (too soon)`
+        );
         return false;
       }
       lastInterruptTimeRef.current = now;
 
-      if (voiceStateRef.current !== "speaking" && !isProcessingResponseRef.current) {
-        console.log(`[${instanceIdRef.current}] ℹ️ Nothing to interrupt - agent not speaking`);
+      if (
+        voiceStateRef.current !== "speaking" &&
+        !isProcessingResponseRef.current
+      ) {
+        console.log(
+          `[${instanceIdRef.current}] ℹ️ Nothing to interrupt - agent not speaking`
+        );
         return false;
       }
 
-      console.log(`[${instanceIdRef.current}] 🛑 Interrupting agent (${reason})`);
+      console.log(
+        `[${instanceIdRef.current}] 🛑 Interrupting agent (${reason})`
+      );
 
-      if (isProcessingResponseRef.current && currentAiTextRef.current.trim() === "") {
+      if (
+        isProcessingResponseRef.current &&
+        currentAiTextRef.current.trim() === ""
+      ) {
         typingIndicatorClearedRef.current = true;
       }
 
@@ -331,7 +414,10 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
           currentAudioSourceRef.current.disconnect();
           currentAudioSourceRef.current = null;
         } catch (err) {
-          console.warn(`[${instanceIdRef.current}] ⚠️ Audio stop error:`, err.message);
+          console.warn(
+            `[${instanceIdRef.current}] ⚠️ Audio stop error:`,
+            err.message
+          );
         }
       }
 
@@ -343,17 +429,30 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
       if (rtRef.current && !keepBuffer) {
         try {
           rtRef.current.send({ type: "input_audio_buffer.clear" });
-          } catch (err) {
-          console.warn(`[${instanceIdRef.current}] ⚠️ Buffer clear failed:`, err.message);
+        } catch (err) {
+          console.warn(
+            `[${instanceIdRef.current}] ⚠️ Buffer clear failed:`,
+            err.message
+          );
         }
       }
 
       // Cancel AI's current response
-      if (rtRef.current && currentResponseIdRef.current && !isResponseDoneRef.current) {
+      if (
+        rtRef.current &&
+        currentResponseIdRef.current &&
+        !isResponseDoneRef.current
+      ) {
         try {
-          rtRef.current.send({ type: "response.cancel", response_id: currentResponseIdRef.current });
-          } catch (err) {
-          console.warn(`[${instanceIdRef.current}] ⚠️ Cancel request failed:`, err.message);
+          rtRef.current.send({
+            type: "response.cancel",
+            response_id: currentResponseIdRef.current,
+          });
+        } catch (err) {
+          console.warn(
+            `[${instanceIdRef.current}] ⚠️ Cancel request failed:`,
+            err.message
+          );
         }
       }
 
@@ -361,9 +460,15 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
       setTimeout(() => {
         if (rtRef.current) {
           try {
-            rtRef.current.send({ type: "session.update", session: { turn_detection: DEFAULT_TURN_DETECTION } });
+            rtRef.current.send({
+              type: "session.update",
+              session: { turn_detection: DEFAULT_TURN_DETECTION },
+            });
           } catch (err) {
-            console.warn(`[${instanceIdRef.current}] ⚠️ Turn detection reset failed:`, err.message);
+            console.warn(
+              `[${instanceIdRef.current}] ⚠️ Turn detection reset failed:`,
+              err.message
+            );
           }
         }
       }, 100);
@@ -413,7 +518,9 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
         for (let i = 0; i < 5; i++) {
           const start = i * bandSize;
           const end = start + bandSize;
-          let sum = 0, max = 0, peakCount = 0;
+          let sum = 0,
+            max = 0,
+            peakCount = 0;
 
           for (let j = start; j < end && j < bufferLength; j++) {
             const value = dataArray[j];
@@ -424,7 +531,8 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
 
           const avg = sum / bandSize;
           const peakFactor = Math.min(peakCount / bandSize, 1);
-          const normalized = (max * 0.6 + avg * 0.3 + peakFactor * 255 * 0.1) / 255;
+          const normalized =
+            (max * 0.6 + avg * 0.3 + peakFactor * 255 * 0.1) / 255;
           const scaled = Math.pow(Math.max(0, normalized), 0.55);
           const maxHeight = i === 2 || i === 3 ? 24 : 20;
           const height = 4 + scaled * (maxHeight - 4);
@@ -451,7 +559,11 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
 
     [sourceNodeRef, analyserRef, workletNodeRef].forEach((nodeRef) => {
       if (nodeRef.current) {
-        try { nodeRef.current.disconnect(); } catch (e) { /* ignore */ }
+        try {
+          nodeRef.current.disconnect();
+        } catch (e) {
+          /* ignore */
+        }
         nodeRef.current = null;
       }
     });
@@ -462,7 +574,11 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
     }
 
     if (audioContextRef.current && audioContextRef.current.state !== "closed") {
-      try { audioContextRef.current.close(); } catch (e) { /* ignore */ }
+      try {
+        audioContextRef.current.close();
+      } catch (e) {
+        /* ignore */
+      }
       audioContextRef.current = null;
     }
 
@@ -480,10 +596,13 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
     canSendAudioRef.current = true;
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia(AUDIO_CONSTRAINTS);
+      const stream = await navigator.mediaDevices.getUserMedia(
+        AUDIO_CONSTRAINTS
+      );
       mediaStreamRef.current = stream;
 
-      const audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
+      const audioContext = new (window.AudioContext ||
+        window.webkitAudioContext)({ sampleRate: 24000 });
       audioContextRef.current = audioContext;
 
       const source = audioContext.createMediaStreamSource(stream);
@@ -503,9 +622,15 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
           const base64Audio = arrayBufferToBase64(pcm16.buffer);
 
           try {
-            rtRef.current.send({ type: "input_audio_buffer.append", audio: base64Audio });
+            rtRef.current.send({
+              type: "input_audio_buffer.append",
+              audio: base64Audio,
+            });
           } catch (err) {
-            console.error(`[${instanceIdRef.current}] Error sending audio:`, err);
+            console.error(
+              `[${instanceIdRef.current}] Error sending audio:`,
+              err
+            );
           }
         }
       };
@@ -517,7 +642,11 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
 
       startFrequencyAnalysis();
     } catch (err) {
-      console.error(`[${instanceIdRef.current}] Failed to start audio capture:`, err.name, err.message);
+      console.error(
+        `[${instanceIdRef.current}] Failed to start audio capture:`,
+        err.name,
+        err.message
+      );
       isCapturingRef.current = false;
 
       if (err.name === "NotAllowedError") {
@@ -545,7 +674,10 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
       try {
         await playAudioBuffer(audioData);
       } catch (error) {
-        console.error(`[${instanceIdRef.current}] Audio playback error:`, error);
+        console.error(
+          `[${instanceIdRef.current}] Audio playback error:`,
+          error
+        );
       }
       if (!isPlayingRef.current) break;
     }
@@ -558,7 +690,8 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
     return new Promise((resolve) => {
       if (!isPlayingRef.current && audioQueueRef.current.length === 0) {
         setTimeout(() => {
-          if (!isPlayingRef.current && audioQueueRef.current.length === 0) resolve();
+          if (!isPlayingRef.current && audioQueueRef.current.length === 0)
+            resolve();
         }, 200);
         return;
       }
@@ -576,7 +709,10 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
         }
       }, 100);
 
-      setTimeout(() => { clearInterval(checkInterval); resolve(); }, 600000);
+      setTimeout(() => {
+        clearInterval(checkInterval);
+        resolve();
+      }, 600000);
     });
   }, []);
 
@@ -584,7 +720,8 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
   const playAudioBuffer = useCallback((arrayBuffer) => {
     return new Promise((resolve, reject) => {
       if (!audioContextRef.current) {
-        audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
+        audioContextRef.current = new (window.AudioContext ||
+          window.webkitAudioContext)({ sampleRate: 24000 });
       }
 
       const pcm16 = new Int16Array(arrayBuffer);
@@ -593,7 +730,11 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
         float32[i] = pcm16[i] / (pcm16[i] < 0 ? 0x8000 : 0x7fff);
       }
 
-      const audioBuffer = audioContextRef.current.createBuffer(1, float32.length, 24000);
+      const audioBuffer = audioContextRef.current.createBuffer(
+        1,
+        float32.length,
+        24000
+      );
       audioBuffer.getChannelData(0).set(float32);
 
       const source = audioContextRef.current.createBufferSource();
@@ -601,8 +742,14 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
       source.connect(audioContextRef.current.destination);
       currentAudioSourceRef.current = source;
 
-      source.onended = () => { currentAudioSourceRef.current = null; resolve(); };
-      source.onerror = (error) => { currentAudioSourceRef.current = null; reject(error); };
+      source.onended = () => {
+        currentAudioSourceRef.current = null;
+        resolve();
+      };
+      source.onerror = (error) => {
+        currentAudioSourceRef.current = null;
+        reject(error);
+      };
       source.start();
     });
   }, []);
@@ -613,14 +760,15 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
   }, [interruptAgent]);
 
   // Setup event handlers for the realtime client
-  const setupEventHandlers = useCallback((rt) => {
-    // WebSocket-level events
-    rt.socket.addEventListener('open', () => {
-      console.log(`[${instanceIdRef.current}] Connection opened!`);
-      isConnectingRef.current = false;
-      globalConnectionActive = true;
+  const setupEventHandlers = useCallback(
+    (rt) => {
+      // WebSocket-level events
+      rt.socket.addEventListener("open", () => {
+        console.log(`[${instanceIdRef.current}] Connection opened!`);
+        isConnectingRef.current = false;
+        globalConnectionActive = true;
 
-      rt.send({ type: "session.update", session: getSessionConfig() });
+        rt.send({ type: "session.update", session: getSessionConfig() });
 
         if (onShowChat && !hasShownChatRef.current) {
           hasShownChatRef.current = true;
@@ -629,87 +777,99 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
 
         if (!hasGreetedRef.current && !globalHasGreeted) {
           setTimeout(() => {
-          if (rtRef.current) {
-            // Use welcome back message if user had a previous conversation, otherwise use full greeting
-            const greetingMessage = globalHasHadConversation 
-              ? GREETING_CONFIG.welcomeBackMessage 
-              : GREETING_CONFIG.message;
-            
-            rt.send({
-                  type: "conversation.item.create",
-                  item: {
-                    type: "message",
-                    role: "user",
-                content: [{ type: "input_text", text: greetingMessage }],
-              },
-            });
-            rt.send({ type: "response.create" });
+            if (rtRef.current) {
+              // Use welcome back message if user had a previous conversation, otherwise use full greeting
+              const greetingMessage = globalHasHadConversation
+                ? GREETING_CONFIG.welcomeBackMessage
+                : GREETING_CONFIG.message;
+
+              rt.send({
+                type: "conversation.item.create",
+                item: {
+                  type: "message",
+                  role: "user",
+                  content: [{ type: "input_text", text: greetingMessage }],
+                },
+              });
+              rt.send({ type: "response.create" });
               hasGreetedRef.current = true;
-            globalHasGreeted = true;
-            globalHasHadConversation = true; // Mark that user has had a conversation
-            updateVoiceState("speaking");
+              globalHasGreeted = true;
+              globalHasHadConversation = true; // Mark that user has had a conversation
+              updateVoiceState("speaking");
             }
-        }, GREETING_CONFIG.delay);
+          }, GREETING_CONFIG.delay);
         } else {
           updateVoiceState("listening");
         }
 
-      if (!isCapturingRef.current) startAudioCapture();
-    });
+        if (!isCapturingRef.current) startAudioCapture();
+      });
 
-    rt.socket.addEventListener('close', (event) => {
+      rt.socket.addEventListener("close", (event) => {
         isConnectingRef.current = false;
-      console.log(`[${instanceIdRef.current}] Connection closed. Code: ${event.code}`);
+        console.log(
+          `[${instanceIdRef.current}] Connection closed. Code: ${event.code}`
+        );
 
         if (event.code === 1000) {
-        rtRef.current = null;
+          rtRef.current = null;
           globalConnectionActive = false;
-        globalRealtimeClient = null;
+          globalRealtimeClient = null;
 
           if (isActive && voiceStateRef.current !== "idle") {
             setTimeout(() => {
-            if (isActive && connectRealtimeRef.current && !rtRef.current) {
-              connectRealtimeRef.current();
+              if (isActive && connectRealtimeRef.current && !rtRef.current) {
+                connectRealtimeRef.current();
               }
             }, 500);
           }
           return;
         }
 
-      const timeSinceLastInterrupt = Date.now() - lastInterruptTimeRef.current;
-      if (event.code === 1006 && (timeSinceLastInterrupt < 3000 || isProcessingResponseRef.current)) {
-        rtRef.current = null;
+        const timeSinceLastInterrupt =
+          Date.now() - lastInterruptTimeRef.current;
+        if (
+          event.code === 1006 &&
+          (timeSinceLastInterrupt < 3000 || isProcessingResponseRef.current)
+        ) {
+          rtRef.current = null;
           globalConnectionActive = false;
-        globalRealtimeClient = null;
+          globalRealtimeClient = null;
           isProcessingResponseRef.current = false;
           isResponseDoneRef.current = true;
 
-        if (voiceStateRef.current !== "idle" && voiceStateRef.current !== "processing") {
+          if (
+            voiceStateRef.current !== "idle" &&
+            voiceStateRef.current !== "processing"
+          ) {
             updateVoiceState("listening");
           }
 
           setTimeout(() => {
-          if (isActive && connectRealtimeRef.current && !rtRef.current) {
-            connectRealtimeRef.current();
+            if (isActive && connectRealtimeRef.current && !rtRef.current) {
+              connectRealtimeRef.current();
             }
           }, 500);
           return;
         }
 
-      if (isReconnectingRef.current) return;
+        if (isReconnectingRef.current) return;
 
-      if (isActive && voiceStateRef.current !== "idle") {
+        if (isActive && voiceStateRef.current !== "idle") {
           isReconnectingRef.current = true;
-        setTimeout(() => {
-          rtRef.current = null;
+          setTimeout(() => {
+            rtRef.current = null;
             globalConnectionActive = false;
-          globalRealtimeClient = null;
+            globalRealtimeClient = null;
             isConnectingRef.current = false;
 
-          if (connectRealtimeRef.current) {
-            connectRealtimeRef.current()
-              .then(() => { isReconnectingRef.current = false; })
-              .catch(() => {
+            if (connectRealtimeRef.current) {
+              connectRealtimeRef
+                .current()
+                .then(() => {
+                  isReconnectingRef.current = false;
+                })
+                .catch(() => {
                   isReconnectingRef.current = false;
                   setError("Connection lost. Please try again.");
                   updateVoiceState("idle");
@@ -717,71 +877,95 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
             } else {
               isReconnectingRef.current = false;
             }
-        }, 500);
+          }, 500);
         } else {
           cleanup(false);
           globalConnectionActive = false;
-        globalRealtimeClient = null;
-      }
-    });
-
-    rt.socket.addEventListener('error', () => {
-      isConnectingRef.current = false;
-      setError("Connection error. Please try again.");
-      updateVoiceState("idle");
-    });
-
-    // SDK event handlers
-    rt.on('session.created', () => {});
-    rt.on('session.updated', () => {});
-
-    rt.on('input_audio_buffer.speech_started', () => {
-          if (currentResponseIdRef.current) {
-            interruptedResponseIdRef.current = currentResponseIdRef.current;
-      }
-
-      if (isProcessingResponseRef.current && currentAiTextRef.current.trim() === "") {
-            typingIndicatorClearedRef.current = true;
-          }
-
-      if (currentAiTextRef.current.trim() !== "" && !currentAiTextSavedRef.current) {
-            if (onAddMessage) {
-          onAddMessage({ type: "ai", text: currentAiTextRef.current + "...", isVoice: true, isStreaming: false });
-          currentAiTextSavedRef.current = true;
+          globalRealtimeClient = null;
         }
-      }
+      });
 
-      interruptAgent("vad_speech", true);
-          currentAiTextRef.current = "";
-          setAiResponse("");
-          updateVoiceState("listening");
-          currentTranscriptRef.current = "";
-          setTranscript("");
-    });
+      rt.socket.addEventListener("error", () => {
+        isConnectingRef.current = false;
+        setError("Connection error. Please try again.");
+        updateVoiceState("idle");
+      });
 
-    rt.on('input_audio_buffer.speech_stopped', () => {
-      if (!isProcessingResponseRef.current) updateVoiceState("processing");
-    });
+      // SDK event handlers
+      rt.on("session.created", () => {});
+      rt.on("session.updated", () => {});
 
-    rt.on('input_audio_buffer.committed', () => {});
-    rt.on('conversation.item.created', () => {});
+      rt.on("input_audio_buffer.speech_started", () => {
+        if (currentResponseIdRef.current) {
+          interruptedResponseIdRef.current = currentResponseIdRef.current;
+        }
 
-    rt.on('conversation.item.input_audio_transcription.completed', (event) => {
-      const itemId = event.item_id;
-      if (itemId && itemId === lastProcessedItemIdRef.current) return;
+        if (
+          isProcessingResponseRef.current &&
+          currentAiTextRef.current.trim() === ""
+        ) {
+          typingIndicatorClearedRef.current = true;
+        }
 
-      if (event.transcript) {
-        if (isPhantomTranscription(event.transcript)) {
-          console.log(`[${instanceIdRef.current}] 🚫 Ignoring phantom transcription`);
+        if (
+          currentAiTextRef.current.trim() !== "" &&
+          !currentAiTextSavedRef.current
+        ) {
+          if (onAddMessage) {
+            onAddMessage({
+              type: "ai",
+              text: currentAiTextRef.current + "...",
+              isVoice: true,
+              isStreaming: false,
+            });
+            currentAiTextSavedRef.current = true;
+          }
+        }
+
+        interruptAgent("vad_speech", true);
+        currentAiTextRef.current = "";
+        setAiResponse("");
+        updateVoiceState("listening");
+        currentTranscriptRef.current = "";
+        setTranscript("");
+      });
+
+      rt.on("input_audio_buffer.speech_stopped", () => {
+        if (!isProcessingResponseRef.current) updateVoiceState("processing");
+      });
+
+      rt.on("input_audio_buffer.committed", () => {});
+      rt.on("conversation.item.created", () => {});
+
+      rt.on(
+        "conversation.item.input_audio_transcription.completed",
+        (event) => {
+          const itemId = event.item_id;
+          if (itemId && itemId === lastProcessedItemIdRef.current) return;
+
+          if (event.transcript) {
+            if (isPhantomTranscription(event.transcript)) {
+              console.log(
+                `[${instanceIdRef.current}] 🚫 Ignoring phantom transcription - ${event.transcript}`
+              );
               return;
             }
 
-            lastProcessedItemIdRef.current = itemId;
-        currentTranscriptRef.current = event.transcript;
-        setTranscript(event.transcript);
+            // ⭐ Print what the user spoke
+            console.log(
+              `[${instanceIdRef.current}] 🗣️ User spoke: "${event.transcript}"`
+            );
 
-        if (onAddMessage) {
-          onAddMessage({ type: "user", text: event.transcript, isVoice: true });
+            lastProcessedItemIdRef.current = itemId;
+            currentTranscriptRef.current = event.transcript;
+            setTranscript(event.transcript);
+
+            if (onAddMessage) {
+              onAddMessage({
+                type: "user",
+                text: event.transcript,
+                isVoice: true,
+              });
               typingIndicatorClearedRef.current = false;
             }
 
@@ -790,201 +974,247 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
               onShowChat();
             }
           }
-    });
+        }
+      );
 
-    rt.on('response.created', (event) => {
-      const newResponseId = event.response?.id;
-          if (newResponseId) {
-        if (newResponseId === currentResponseIdRef.current) return;
+      rt.on("response.created", (event) => {
+        const newResponseId = event.response?.id;
+        if (newResponseId) {
+          if (newResponseId === currentResponseIdRef.current) return;
 
-        if (interruptedResponseIdRef.current && interruptedResponseIdRef.current !== newResponseId) {
-              interruptedResponseIdRef.current = null;
-            }
+          if (
+            interruptedResponseIdRef.current &&
+            interruptedResponseIdRef.current !== newResponseId
+          ) {
+            interruptedResponseIdRef.current = null;
+          }
 
-            currentResponseIdRef.current = newResponseId;
-            isProcessingResponseRef.current = true;
-        isResponseDoneRef.current = false;
-        canSendAudioRef.current = false;
-            currentAiTextRef.current = "";
-            currentAiTextSavedRef.current = false;
-        typingIndicatorClearedRef.current = false;
-        // 🌬️ Reset breath flag for new response - Teja will take a breath before speaking
-        isFirstChunkOfResponseRef.current = true;
-            updateVoiceState("processing");
-            clearInputAudioBuffer();
-      }
-    });
+          currentResponseIdRef.current = newResponseId;
+          isProcessingResponseRef.current = true;
+          isResponseDoneRef.current = false;
+          canSendAudioRef.current = false;
+          currentAiTextRef.current = "";
+          currentAiTextSavedRef.current = false;
+          typingIndicatorClearedRef.current = false;
+          // 🌬️ Reset breath flag for new response - Teja will take a breath before speaking
+          isFirstChunkOfResponseRef.current = true;
+          updateVoiceState("processing");
+          clearInputAudioBuffer();
+        }
+      });
 
-    rt.on('response.audio_transcript.delta', (event) => {
-      const deltaResponseId = event.response_id || event.response?.id;
+      rt.on("response.audio_transcript.delta", (event) => {
+        const deltaResponseId = event.response_id || event.response?.id;
 
-      if (deltaResponseId && deltaResponseId === interruptedResponseIdRef.current) return;
+        if (
+          deltaResponseId &&
+          deltaResponseId === interruptedResponseIdRef.current
+        )
+          return;
 
-      if (voiceStateRef.current !== "speaking") updateVoiceState("speaking");
+        if (voiceStateRef.current !== "speaking") updateVoiceState("speaking");
 
-      if (event.delta) currentAiTextRef.current += event.delta;
+        if (event.delta) currentAiTextRef.current += event.delta;
 
-      if (event.delta && deltaResponseId === currentResponseIdRef.current && deltaResponseId !== lastProcessedResponseIdRef.current) {
-        currentAiResponseRef.current += event.delta;
-            setAiResponse(currentAiResponseRef.current);
+        if (
+          event.delta &&
+          deltaResponseId === currentResponseIdRef.current &&
+          deltaResponseId !== lastProcessedResponseIdRef.current
+        ) {
+          currentAiResponseRef.current += event.delta;
+          setAiResponse(currentAiResponseRef.current);
 
-            if (onAddMessage && currentAiResponseRef.current) {
-              onAddMessage({
-                type: "ai",
-                text: currentAiResponseRef.current,
-                isVoice: true,
-            isStreaming: true,
+          if (onAddMessage && currentAiResponseRef.current) {
+            onAddMessage({
+              type: "ai",
+              text: currentAiResponseRef.current,
+              isVoice: true,
+              isStreaming: true,
+              isTyping: false,
+              replaceTyping: true,
+            });
+          }
+        }
+      });
+
+      rt.on("response.audio_transcript.done", (event) => {
+        const responseId = event.response_id || event.response?.id;
+
+        if (responseId && responseId === interruptedResponseIdRef.current)
+          return;
+        if (responseId && responseId === lastProcessedResponseIdRef.current)
+          return;
+        if (responseId && responseId !== currentResponseIdRef.current) return;
+
+        const transcriptText = currentAiTextRef.current.trim();
+        if (!transcriptText) {
+          currentAiResponseRef.current = "";
+          return;
+        }
+
+        if (responseId) lastProcessedResponseIdRef.current = responseId;
+
+        if (onAddMessage && transcriptText && !currentAiTextSavedRef.current) {
+          onAddMessage({
+            type: "ai",
+            text: transcriptText,
+            isVoice: true,
+            isStreaming: false,
             isTyping: false,
             replaceTyping: true,
           });
+          currentAiTextSavedRef.current = true;
         }
-      }
-    });
 
-    rt.on('response.audio_transcript.done', (event) => {
-      const responseId = event.response_id || event.response?.id;
-
-      if (responseId && responseId === interruptedResponseIdRef.current) return;
-      if (responseId && responseId === lastProcessedResponseIdRef.current) return;
-      if (responseId && responseId !== currentResponseIdRef.current) return;
-
-          const transcriptText = currentAiTextRef.current.trim();
-          if (!transcriptText) {
-            currentAiResponseRef.current = "";
-            return;
-          }
-
-      if (responseId) lastProcessedResponseIdRef.current = responseId;
-
-      if (onAddMessage && transcriptText && !currentAiTextSavedRef.current) {
-            onAddMessage({
-              type: "ai",
-              text: transcriptText,
-              isVoice: true,
-          isStreaming: false,
-          isTyping: false,
-          replaceTyping: true,
-        });
-            currentAiTextSavedRef.current = true;
-          }
-
-          currentAiResponseRef.current = "";
-    });
-
-    rt.on('response.audio.delta', (event) => {
-      if (voiceStateRef.current !== "speaking") updateVoiceState("speaking");
-
-      const audioResponseId = event.response_id || event.response?.id;
-      if (event.delta && audioResponseId === currentResponseIdRef.current) {
-        const audioData = base64ToArrayBuffer(event.delta);
-        
-        // 🌬️ Inject breath BEFORE the first audio chunk of a response
-        // This makes Teja sound like she's taking a breath before speaking
-        if (isFirstChunkOfResponseRef.current && shouldAddBreath(null, audioData)) {
-          const breathBuffer = generateBreathBuffer();
-          audioQueueRef.current.push(breathBuffer);
-          isFirstChunkOfResponseRef.current = false;
-        }
-        
-            audioQueueRef.current.push(audioData);
-            playAudioQueue();
-          }
-    });
-
-    rt.on('response.audio.done', () => {});
-
-    rt.on('response.function_call_arguments.delta', () => {
-      if (voiceStateRef.current !== "processing") {
-        updateVoiceState("processing");
-        // Update UI to show user we're searching
-        setTranscript("Searching...");
-      }
-    });
-
-    rt.on('response.function_call_arguments.done', (event) => {
-      const callId = event.call_id;
-      const functionName = event.name;
-
-      try {
-        const functionArgs = JSON.parse(event.arguments);
-            executeFunctionCall(callId, functionName, functionArgs);
-          } catch (error) {
-        console.error(`[${instanceIdRef.current}] Failed to parse function arguments:`, error);
-        if (rtRef.current) {
-          rtRef.current.send({
-                  type: "conversation.item.create",
-                  item: {
-                    type: "function_call_output",
-                    call_id: callId,
-              output: JSON.stringify({ success: false, error: "Failed to parse function arguments" }),
-                  },
-          });
-            }
-          }
-    });
-
-    rt.on('response.done', () => {
-          isResponseDoneRef.current = true;
-          clearInputAudioBuffer();
-
-          const finalText = currentAiTextRef.current.trim();
-      if (finalText !== "" && !currentAiTextSavedRef.current && onAddMessage) {
-        onAddMessage({ type: "ai", text: finalText });
-      }
-
-          waitForAudioToFinish().then(() => {
-            setTimeout(() => {
-              isProcessingResponseRef.current = false;
-              currentResponseIdRef.current = null;
-          canSendAudioRef.current = true;
-              currentAiTextRef.current = "";
-              setAiResponse("");
-
-          if (voiceStateRef.current !== "idle" && voiceStateRef.current !== "processing") {
-                updateVoiceState("listening");
-              }
-        }, 300);
+        currentAiResponseRef.current = "";
       });
-    });
 
-    rt.on('error', (event) => {
-      const error = event.error || event;
+      rt.on("response.audio.delta", (event) => {
+        if (voiceStateRef.current !== "speaking") updateVoiceState("speaking");
 
-      if (error?.code === "response_cancel_not_active" || error?.message?.includes("no active response") || error?.message?.includes("cancel")) {
-        if (isProcessingResponseRef.current && currentAiTextRef.current.trim() === "") {
-              typingIndicatorClearedRef.current = true;
-            }
-            isResponseDoneRef.current = true;
+        const audioResponseId = event.response_id || event.response?.id;
+        if (event.delta && audioResponseId === currentResponseIdRef.current) {
+          const audioData = base64ToArrayBuffer(event.delta);
+
+          // 🌬️ Inject breath BEFORE the first audio chunk of a response
+          // This makes Teja sound like she's taking a breath before speaking
+          // if (
+          //   isFirstChunkOfResponseRef.current &&
+          //   shouldAddBreath(null, audioData)
+          // ) {
+          //   const breathBuffer = generateBreathBuffer();
+          //   audioQueueRef.current.push(breathBuffer);
+          //   isFirstChunkOfResponseRef.current = false;
+          // }
+
+          audioQueueRef.current.push(audioData);
+          playAudioQueue();
+        }
+      });
+
+      rt.on("response.audio.done", () => {});
+
+      rt.on("response.function_call_arguments.delta", () => {
+        if (voiceStateRef.current !== "processing") {
+          updateVoiceState("processing");
+          // Update UI to show user we're searching
+          setTranscript("Searching...");
+        }
+      });
+
+      rt.on("response.function_call_arguments.done", (event) => {
+        const callId = event.call_id;
+        const functionName = event.name;
+
+        try {
+          const functionArgs = JSON.parse(event.arguments);
+          executeFunctionCall(callId, functionName, functionArgs);
+        } catch (error) {
+          console.error(
+            `[${instanceIdRef.current}] Failed to parse function arguments:`,
+            error
+          );
+          if (rtRef.current) {
+            rtRef.current.send({
+              type: "conversation.item.create",
+              item: {
+                type: "function_call_output",
+                call_id: callId,
+                output: JSON.stringify({
+                  success: false,
+                  error: "Failed to parse function arguments",
+                }),
+              },
+            });
+          }
+        }
+      });
+
+      rt.on("response.done", () => {
+        isResponseDoneRef.current = true;
+        clearInputAudioBuffer();
+
+        const finalText = currentAiTextRef.current.trim();
+        if (
+          finalText !== "" &&
+          !currentAiTextSavedRef.current &&
+          onAddMessage
+        ) {
+          onAddMessage({ type: "ai", text: finalText });
+        }
+
+        waitForAudioToFinish().then(() => {
+          setTimeout(() => {
             isProcessingResponseRef.current = false;
+            currentResponseIdRef.current = null;
             canSendAudioRef.current = true;
-        if (voiceStateRef.current === "speaking") updateVoiceState("listening");
-        return;
-      }
+            currentAiTextRef.current = "";
+            setAiResponse("");
 
-      console.error("API Error:", error);
-            const errorText = currentAiTextRef.current.trim();
-            if (isProcessingResponseRef.current && onAddMessage && errorText) {
-        onAddMessage({ type: "ai", text: errorText, isVoice: true, isTyping: false, isStreaming: false });
-      }
-            if (isProcessingResponseRef.current && !errorText) {
-              typingIndicatorClearedRef.current = true;
+            if (
+              voiceStateRef.current !== "idle" &&
+              voiceStateRef.current !== "processing"
+            ) {
+              updateVoiceState("listening");
             }
-      setError(error?.message || "An error occurred");
-            isProcessingResponseRef.current = false;
-            canSendAudioRef.current = true;
-    });
-  }, [
+          }, 300);
+        });
+      });
+
+      rt.on("error", (event) => {
+        const error = event.error || event;
+
+        if (
+          error?.code === "response_cancel_not_active" ||
+          error?.message?.includes("no active response") ||
+          error?.message?.includes("cancel")
+        ) {
+          if (
+            isProcessingResponseRef.current &&
+            currentAiTextRef.current.trim() === ""
+          ) {
+            typingIndicatorClearedRef.current = true;
+          }
+          isResponseDoneRef.current = true;
+          isProcessingResponseRef.current = false;
+          canSendAudioRef.current = true;
+          if (voiceStateRef.current === "speaking")
+            updateVoiceState("listening");
+          return;
+        }
+
+        console.error("API Error:", error);
+        const errorText = currentAiTextRef.current.trim();
+        if (isProcessingResponseRef.current && onAddMessage && errorText) {
+          onAddMessage({
+            type: "ai",
+            text: errorText,
+            isVoice: true,
+            isTyping: false,
+            isStreaming: false,
+          });
+        }
+        if (isProcessingResponseRef.current && !errorText) {
+          typingIndicatorClearedRef.current = true;
+        }
+        setError(error?.message || "An error occurred");
+        isProcessingResponseRef.current = false;
+        canSendAudioRef.current = true;
+      });
+    },
+    [
       onAddMessage,
       onShowChat,
       updateVoiceState,
       clearInputAudioBuffer,
       executeFunctionCall,
       interruptAgent,
-    startAudioCapture,
-    playAudioQueue,
-    waitForAudioToFinish,
-    isActive,
-  ]);
+      startAudioCapture,
+      playAudioQueue,
+      waitForAudioToFinish,
+      isActive,
+    ]
+  );
 
   // Initialize Realtime SDK connection
   const connectRealtime = useCallback(async () => {
@@ -1014,7 +1244,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
       rtRef.current = rt;
       globalRealtimeClient = rt;
       setupEventHandlers(rt);
-          } catch (err) {
+    } catch (err) {
       console.error(`[${instanceIdRef.current}] Failed to connect:`, err);
       isConnectingRef.current = false;
       setError("Failed to connect. Please try again.");
@@ -1030,7 +1260,9 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
           currentAudioSourceRef.current.stop();
           currentAudioSourceRef.current.disconnect();
           currentAudioSourceRef.current = null;
-        } catch (e) { /* ignore */ }
+        } catch (e) {
+          /* ignore */
+        }
       }
 
       if (tokenRefreshTimerRef.current) {
@@ -1041,7 +1273,11 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
       stopAudioCapture();
 
       if (rtRef.current && shouldCloseConnection) {
-        try { rtRef.current.close(); } catch (e) { /* ignore */ }
+        try {
+          rtRef.current.close();
+        } catch (e) {
+          /* ignore */
+        }
         rtRef.current = null;
         globalConnectionActive = false;
         globalRealtimeClient = null;
@@ -1114,12 +1350,15 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
 
     const watchdogInterval = setInterval(() => {
       const isListening = voiceStateRef.current === "listening";
-      const noConnection = !rtRef.current || rtRef.current.socket?.readyState !== WebSocket.OPEN;
+      const noConnection =
+        !rtRef.current || rtRef.current.socket?.readyState !== WebSocket.OPEN;
       const notConnecting = !isConnectingRef.current;
       const notReconnecting = !isReconnectingRef.current;
 
       if (isListening && noConnection && notConnecting && notReconnecting) {
-        console.warn(`[${instanceIdRef.current}] ⚠️ WATCHDOG: Stuck in Listening - attempting recovery...`);
+        console.warn(
+          `[${instanceIdRef.current}] ⚠️ WATCHDOG: Stuck in Listening - attempting recovery...`
+        );
         if (connectRealtimeRef.current) connectRealtimeRef.current();
       }
     }, 3000);
@@ -1133,14 +1372,17 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
 
     if (!currentIsActive) {
       if (hasStartedRef.current && cleanupRef.current) {
-          cleanupRef.current(true);
+        cleanupRef.current(true);
         hasStartedRef.current = false;
       }
       return;
     }
 
     if (globalConnectionActive && globalRealtimeClient) {
-      if (!rtRef.current && globalRealtimeClient.socket?.readyState === WebSocket.OPEN) {
+      if (
+        !rtRef.current &&
+        globalRealtimeClient.socket?.readyState === WebSocket.OPEN
+      ) {
         rtRef.current = globalRealtimeClient;
       }
 
@@ -1194,7 +1436,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
 
     return () => {
       if (!currentIsActive && hasStartedRef.current && cleanupRef.current) {
-          cleanupRef.current(true);
+        cleanupRef.current(true);
         hasStartedRef.current = false;
       }
     };
@@ -1213,12 +1455,20 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
   const getStatusText = () => {
     if (error) return error;
     switch (voiceState) {
-      case "connecting": return "Connecting...";
-      case "listening": return "Listening...";
-      case "processing": return "Searching...";
-      case "speaking": return "";
+      case "connecting":
+        return "Connecting...";
+      case "listening":
+        return "Listening...";
+      case "processing":
+        return "Searching...";
+      case "speaking":
+        return "";
       default:
-        if (isActive && (rtRef.current?.socket?.readyState === WebSocket.OPEN || globalConnectionActive)) {
+        if (
+          isActive &&
+          (rtRef.current?.socket?.readyState === WebSocket.OPEN ||
+            globalConnectionActive)
+        ) {
           return "Listening...";
         }
         return "Ready";
@@ -1230,11 +1480,16 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
     return (
       <div className="flex items-center justify-between w-full gap-3 p-4 bg-red-50 border border-red-200 rounded-lg">
         <div className="flex-1">
-          <p className="text-sm font-medium text-red-800">Voice assistant encountered an error.</p>
+          <p className="text-sm font-medium text-red-800">
+            Voice assistant encountered an error.
+          </p>
           <p className="text-xs text-red-600 mt-1">{fatalError}</p>
         </div>
         <button
-          onClick={() => { setFatalError(null); handleEndSession(); }}
+          onClick={() => {
+            setFatalError(null);
+            handleEndSession();
+          }}
           className="px-3 py-1.5 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700 transition-colors"
         >
           Reset
@@ -1251,19 +1506,30 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
       <div className="relative flex-shrink-0">
         <div
           className={`absolute inset-0 w-9 h-9 sm:w-10 sm:h-10 rounded-full blur-md ${
-            voiceState === "listening" ? "animate-voicePulseInline" : voiceState === "speaking" ? "animate-voiceSpeakingPulseInline" : ""
+            voiceState === "listening"
+              ? "animate-voicePulseInline"
+              : voiceState === "speaking"
+              ? "animate-voiceSpeakingPulseInline"
+              : ""
           }`}
           style={{
-            background: voiceState === "speaking"
+            background:
+              voiceState === "speaking"
                 ? "linear-gradient(to right, #22d3ee, #60a5fa)"
-              : error ? "linear-gradient(to right, #ef4444, #dc2626)" : "linear-gradient(to right, #818cf8, #6366f1)",
+                : error
+                ? "linear-gradient(to right, #ef4444, #dc2626)"
+                : "linear-gradient(to right, #818cf8, #6366f1)",
             opacity: 0.4,
           }}
         />
 
         <div
           className={`relative w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center overflow-hidden ${
-            voiceState === "listening" ? "animate-voiceOrbInline" : voiceState === "speaking" ? "animate-voiceSpeakingOrbInline" : ""
+            voiceState === "listening"
+              ? "animate-voiceOrbInline"
+              : voiceState === "speaking"
+              ? "animate-voiceSpeakingOrbInline"
+              : ""
           }`}
           style={{
             background: error
@@ -1279,7 +1545,19 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
           {voiceState === "listening" && !error && (
             <div className="flex items-center justify-center gap-0.5">
               {frequencyData.map((height, index) => (
-                <span key={index} style={{ display: "block", width: "2px", height: `${height}px`, minHeight: "4px", background: "white", borderRadius: "2px", transition: "height 0.1s ease-out", transformOrigin: "bottom" }} />
+                <span
+                  key={index}
+                  style={{
+                    display: "block",
+                    width: "2px",
+                    height: `${height}px`,
+                    minHeight: "4px",
+                    background: "white",
+                    borderRadius: "2px",
+                    transition: "height 0.1s ease-out",
+                    transformOrigin: "bottom",
+                  }}
+                />
               ))}
             </div>
           )}
@@ -1287,22 +1565,40 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
           {voiceState === "speaking" && !error && (
             <div className="flex items-center justify-center gap-0.5">
               {[8, 14, 18, 14, 8].map((height, index) => (
-                <span key={index} style={{ display: "block", width: "2.5px", height: `${height}px`, background: "white", borderRadius: "2px", animation: "voiceBarAnimInline 0.6s ease-in-out infinite", animationDelay: `${index * 0.08}s` }} />
+                <span
+                  key={index}
+                  style={{
+                    display: "block",
+                    width: "2.5px",
+                    height: `${height}px`,
+                    background: "white",
+                    borderRadius: "2px",
+                    animation: "voiceBarAnimInline 0.6s ease-in-out infinite",
+                    animationDelay: `${index * 0.08}s`,
+                  }}
+                />
               ))}
             </div>
           )}
 
-          {(voiceState === "processing" || voiceState === "connecting") && !error && (
+          {(voiceState === "processing" || voiceState === "connecting") &&
+            !error && (
               <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
             )}
 
-          {(voiceState === "idle" || error) && <Mic className="w-4 h-4 text-white" />}
+          {(voiceState === "idle" || error) && (
+            <Mic className="w-4 h-4 text-white" />
+          )}
         </div>
       </div>
 
       {/* Status text */}
       <div className="flex-1 text-center min-w-0">
-        <p className={`text-sm sm:text-base font-medium truncate ${error ? "text-red-500" : "text-gray-700"}`}>
+        <p
+          className={`text-sm sm:text-base font-medium truncate ${
+            error ? "text-red-500" : "text-gray-700"
+          }`}
+        >
           {getStatusText()}
         </p>
       </div>
@@ -1310,12 +1606,23 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
       {/* Control buttons */}
       <div className="flex items-center gap-2 flex-shrink-0">
         {voiceState === "speaking" && (
-          <button onClick={handleInterrupt} className="p-1.5 sm:p-2 rounded-full bg-gray-100 hover:bg-gray-200 transition-all duration-200 hover:scale-105" title="Interrupt">
+          <button
+            onClick={handleInterrupt}
+            className="p-1.5 sm:p-2 rounded-full bg-gray-100 hover:bg-gray-200 transition-all duration-200 hover:scale-105"
+            title="Interrupt"
+          >
             <MicOff className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-gray-600" />
           </button>
         )}
 
-        <button onClick={handleEndSession} className="p-1.5 sm:p-2 rounded-full transition-all duration-200 hover:scale-105" style={{ background: "linear-gradient(135deg, #ef4444 0%, #dc2626 100%)" }} title="End Session">
+        <button
+          onClick={handleEndSession}
+          className="p-1.5 sm:p-2 rounded-full transition-all duration-200 hover:scale-105"
+          style={{
+            background: "linear-gradient(135deg, #ef4444 0%, #dc2626 100%)",
+          }}
+          title="End Session"
+        >
           <PhoneOff className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
         </button>
       </div>
