@@ -564,12 +564,12 @@ People & Achievements:
         "Philip Samuelraj, Jesso Clarence, Dharmaraj, Agentic AI, RAG, MLOps, ChromaDB, Palantir, Techjays, CEO, Arun, Aparna, DSPy, Bracketology, Via Analytics, SpreeTail, NSR, Vortex, Accoes, Fayvit, and Shipdude",
     },
 
-    // FIX 2: Enhanced turn detection to filter out background hum
+    // FIX 2: Enhanced turn detection to filter out background hum and prevent greeting interruptions
     turn_detection: {
       type: "server_vad",
-      threshold: 0.8, // Increased threshold (default is 0.5) to filter out background hum
-      prefix_padding_ms: 300,
-      silence_duration_ms: 500,
+      threshold: 0.85, // Higher threshold (default is 0.5) to filter out background noise during greeting
+      prefix_padding_ms: 400, // Increased to require more sustained audio before considering it speech
+      silence_duration_ms: 700, // Increased to prevent brief noises from triggering turn detection
     },
     tools: [
       {
