@@ -94,6 +94,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
   const isInitialConnectionRef = useRef(true);
   const isReconnectingRef = useRef(false);
   const lastInterruptTimeRef = useRef(0);
+  const isFunctionCallInProgressRef = useRef(false);
 
   // Token management refs
   const tokenRef = useRef(null);
@@ -277,6 +278,9 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
           },
         });
         rtRef.current.send({ type: "response.create" });
+
+        // Keep function call flag true until new response is created
+        // This prevents state from resetting to "listening" prematurely
       } catch (error) {
         console.error(
           `[${instanceIdRef.current}] ❌ Function execution error:`,
@@ -477,6 +481,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
       currentResponseIdRef.current = null;
       isProcessingResponseRef.current = false;
       isResponseDoneRef.current = false;
+      isFunctionCallInProgressRef.current = false;
       canSendAudioRef.current = true;
       currentTranscriptRef.current = "";
       setTranscript("");
@@ -998,6 +1003,8 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
           typingIndicatorClearedRef.current = false;
           // 🌬️ Reset breath flag for new response - Teja will take a breath before speaking
           isFirstChunkOfResponseRef.current = true;
+          // Reset function call flag - a new response means the function result has been received
+          isFunctionCallInProgressRef.current = false;
           updateVoiceState("processing");
           clearInputAudioBuffer();
         }
@@ -1095,6 +1102,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
       rt.on("response.audio.done", () => {});
 
       rt.on("response.function_call_arguments.delta", () => {
+        isFunctionCallInProgressRef.current = true;
         if (voiceStateRef.current !== "processing") {
           updateVoiceState("processing");
           // Update UI to show user we're searching
@@ -1151,9 +1159,12 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
             currentAiTextRef.current = "";
             setAiResponse("");
 
+            // Don't reset to listening if a function call is in progress
+            // This prevents showing "Listening..." when we should show "Searching..."
             if (
               voiceStateRef.current !== "idle" &&
-              voiceStateRef.current !== "processing"
+              voiceStateRef.current !== "processing" &&
+              !isFunctionCallInProgressRef.current
             ) {
               updateVoiceState("listening");
             }
@@ -1199,6 +1210,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
         }
         setError(error?.message || "An error occurred");
         isProcessingResponseRef.current = false;
+        isFunctionCallInProgressRef.current = false;
         canSendAudioRef.current = true;
       });
     },
@@ -1291,6 +1303,7 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
       isProcessingResponseRef.current = false;
       isResponseDoneRef.current = false;
       isConnectingRef.current = false;
+      isFunctionCallInProgressRef.current = false;
       canSendAudioRef.current = true;
 
       if (shouldCloseConnection) {
