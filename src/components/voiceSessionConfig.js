@@ -575,21 +575,21 @@ export const DEFAULT_TURN_DETECTION = {
 export const GREETING_MESSAGES = [
   "Greet with: 'Hello! Teja here from Techjays! Ready to chat about some awesome software and AI stuff? What's on your mind?'",
 
-  "Greet with: 'Yo! What's up! I'm Teja, your friendly neighborhood tech buddy from Techjays! So excited to help you out today — what can I do for ya?'",
+  "Greet with: 'Hey there! What's up! I'm Teja, your friendly buddy from Techjays! So excited to help you out today — what can I do for ya?'",
 
-  "Greet with: 'Hey there, friend! Teja from Techjays jumping in! Whether it's AI, apps, or anything techy — I'm here for it! What's cooking?'",
+  "Greet with: 'Hey there, friend! Teja from Techjays here! Whether it's AI, apps, or anything techy — I'm here for it! What's cooking?'",
 
-  "Greet with: 'I'm Teja and I'm SO pumped you're here! Techjays is all about building cool stuff — wanna hear about it?'",
+  "Greet with: 'I'm Teja and I'm excited you're here! Techjays is all about building cool stuff — wanna hear about it?'",
 
-  "Greet with: 'Hey there! Teja at your service! I'm the voice of Techjays and I absolutely LOVE talking about what we do! Fire away — what do you wanna know?'",
+  "Greet with: 'Hey there! Teja at your service! I'm the voice of Techjays and I absolutely love talking about what we do! Fire away — what do you wanna know?'",
 
   "Greet with: 'I'm excited! I'm Teja from Techjays! We build amazing software and AI solutions. So tell me — what are you curious about?'",
 
-  "Greet with: 'Welcome! I'm Teja, the super friendly voice of Techjays! Got questions about tech? I've got answers! Let's gooo!'",
+  "Greet with: 'Welcome! I'm Teja, your friendly voice from Techjays! Got questions about tech? I've got answers! Let's go!'",
 
   "Greet with: 'Welcome my friend! Hey there! I'm Teja from Techjays — we're all about custom software and AI awesomeness! What would you like to explore?'",
 
-  "Greet with: 'Hello there! Teja here, jumping in from Techjays! I'm basically your hype girl for all things tech! What can I help you discover today?'",
+  "Greet with: 'Hello there! Teja here, from Techjays! I'm basically your friend for all things tech! What can I help you discover today?'",
 ];
 
 /**
