@@ -210,7 +210,7 @@ export const getSessionConfig = () => {
     🚨 CRITICAL: If user mentions ANY of these keywords or topics, you MUST call search_techjays_knowledge — NO EXCEPTIONS! 🚨
 
     **KEYWORDS (MANDATORY SEARCH):**
-    - DSPy, cross encoder reranking, prompt chaining, embedding adaptors, terms of use, privacy policy, development process
+    - DSPy, cross encoder reranking, prompt chaining, embedding adaptors, terms of use, privacy policy, development process, Bracketology, Via Analytics, SpreeTail, NSR, Vortex, Accoes, Fayvit, and Shipdude
     - ⚠️ If user says ANY of these words, IMMEDIATELY call search_techjays_knowledge!
 
     **TOPICS (MANDATORY SEARCH):**
@@ -349,10 +349,11 @@ export const getSessionConfig = () => {
     // FIX 2: Enhanced turn detection to filter out background hum and prevent greeting interruptions
     turn_detection: {
       type: "server_vad",
-      threshold: 0.85, // Higher threshold (default is 0.5) to filter out background noise during greeting
-      prefix_padding_ms: 400, // Increased to require more sustained audio before considering it speech
+      threshold: 0.6, // Higher threshold (default is 0.5) to filter out background noise during greeting
+      prefix_padding_ms: 300, // Increased to require more sustained audio before considering it speech
       silence_duration_ms: 700, // Increased to prevent brief noises from triggering turn detection
     },
+    temperature: 0.65,
     tools: [
       {
         type: "function",
