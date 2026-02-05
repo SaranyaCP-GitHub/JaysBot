@@ -272,6 +272,18 @@ export const NO_INFO_INDICATORS = [
   "not in the available",
   "aren't included",
   "are not included",
+  // Patterns for "don't have a case study" type responses
+  "don't have a specific case study",
+  "do not have a specific case study",
+  "don't have a case study",
+  "do not have a case study",
+  "we don't have specific",
+  "we do not have specific",
+  "don't have specific information",
+  "do not have specific information",
+  "isn't a case study",
+  "is not a case study",
+  "no case study",
 ];
 
 /**
