@@ -221,3 +221,66 @@ export const shouldAddBreath = (previousChunk, currentChunk) => {
 
   return false;
 };
+
+/**
+ * Phrases that indicate backend doesn't have specific information
+ * Used to detect when RAG API returns "no info available" type responses
+ */
+export const NO_INFO_INDICATORS = [
+  "not available in the current document",
+  "not available into the current document",
+  "don't have project-specific details",
+  "do not have project-specific details",
+  "i don't have that information",
+  "i do not have that information",
+  "no information available",
+  "not in my knowledge base",
+  "outside my current knowledge",
+  "i'm not able to find",
+  "i am not able to find",
+  "unable to find information",
+  "don't have specific details",
+  "do not have specific details",
+  "while i don't have",
+  "while i do not have",
+  "i cannot find",
+  "i can not find",
+  "no specific information",
+  "not mentioned in",
+  "doesn't appear in",
+  "does not appear in",
+  // Additional patterns for "not explicitly provided" type responses
+  "aren't explicitly provided",
+  "are not explicitly provided",
+  "isn't explicitly provided",
+  "is not explicitly provided",
+  "not explicitly provided",
+  "aren't provided in",
+  "are not provided in",
+  "isn't provided in",
+  "is not provided in",
+  "not provided in the",
+  "aren't available in",
+  "are not available in",
+  "isn't available in",
+  "is not available in",
+  "details aren't",
+  "details are not",
+  "details isn't",
+  "details is not",
+  "not included in the available",
+  "not in the available",
+  "aren't included",
+  "are not included",
+];
+
+/**
+ * Detects if a backend response indicates missing information
+ * @param {string} response - The response text to check
+ * @returns {boolean} - True if response indicates no information available
+ */
+export const isNoInfoResponse = (response) => {
+  if (!response) return false;
+  const responseLower = response.toLowerCase();
+  return NO_INFO_INDICATORS.some((phrase) => responseLower.includes(phrase));
+};
