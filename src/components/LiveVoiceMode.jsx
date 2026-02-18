@@ -16,6 +16,7 @@ import {
   generateBreathBuffer,
   shouldAddBreath,
   BREATH_CONFIG,
+  isNoInfoResponse,
 } from "./voiceAudioUtils";
 
 // Import session configuration
@@ -232,6 +233,24 @@ const LiveVoiceMode = ({ isActive, onClose, onAddMessage, onShowChat }) => {
 
               botMessage = botMessage.replace(/<link>/g, "").replace(/, $/, "");
               botMessage = botMessage.replace(/\s*\.:\s*/g, "");
+
+              // Check if response indicates no specific info available
+              // Transform to helpful alternative - don't mention missing docs
+              if (isNoInfoResponse(botMessage)) {
+                // Try to preserve any positive statement before the "but I don't have..."
+                const positiveMatch = botMessage.match(
+                  /^([^.!?]+(?:is|are)[^.!?]+)[.!?]/i
+                );
+
+                if (positiveMatch) {
+                  // Keep the positive part, add helpful alternative
+                  botMessage = `${positiveMatch[1]}! I can share an overview of our capabilities, similar engagements, or answer other questions. What would be most helpful?`;
+                } else {
+                  // No positive info to preserve, use generic helpful response
+                  botMessage =
+                    "I can help with an overview of our capabilities, similar engagements, or answer other questions you might have. What would you like to know?";
+                }
+              }
 
               result = {
                 success: true,
