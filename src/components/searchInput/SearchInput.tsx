@@ -82,6 +82,7 @@ const SearchInput: React.FC<SearchInputProps> = ({
           </div>
         )}
       </div>
+      {/* Voice button hidden while Azure model is paused
       <IconButton
         icon={AudioLines}
         onClick={onVoiceStart}
@@ -93,6 +94,7 @@ const SearchInput: React.FC<SearchInputProps> = ({
           strokeWidth: 3,
         }}
       />
+      */}
       <IconButton
         icon={Send}
         onClick={onSearch}
